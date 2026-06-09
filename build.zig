@@ -20,6 +20,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    exe.root_module.link_libc = true;
+    exe.root_module.linkSystemLibrary("SDL3", .{ .use_pkg_config = .force });
+
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");
