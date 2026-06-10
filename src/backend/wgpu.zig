@@ -94,7 +94,7 @@ pub const Gpu = struct {
     }
 
     /// Clears and presents one frame
-    pub fn render(self: *Gpu) !void {
+    pub fn render(self: *Gpu, state: RenderState) !void {
         var surface_texture: c.WGPUSurfaceTexture = std.mem.zeroes(c.WGPUSurfaceTexture);
         c.wgpuSurfaceGetCurrentTexture(self.surface, &surface_texture);
 
@@ -137,8 +137,8 @@ pub const Gpu = struct {
         color_attachment.loadOp = c.WGPULoadOp_Clear;
         color_attachment.storeOp = c.WGPUStoreOp_Store;
         color_attachment.clearValue = .{
-            .r = 0.97,
-            .g = 0.10,
+            .r = std.math.clamp(state.x / 500.0, 0.0, 1.0),
+            .g = std.math.clamp(state.y / 500.0, 0.0, 1.0),
             .b = 0.16,
             .a = 1.0,
         };
@@ -199,6 +199,11 @@ pub const Gpu = struct {
         c.wgpuSurfaceConfigure(self.surface, &config);
         // std.log.info("wgpu surface resized: {d}x{d}", .{ width, height });
     }
+};
+
+pub const RenderState = struct {
+    x: f32 = 0.0,
+    y: f32 = 0.0,
 };
 
 const AdapterRequest = struct {

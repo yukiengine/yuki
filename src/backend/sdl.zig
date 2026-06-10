@@ -85,6 +85,7 @@ pub fn runHelloWindow() !void {
 
     var input = Input{};
     var game_state = GameState{};
+    var render_state = wgpu.RenderState{};
 
     var running = true;
     while (running) {
@@ -141,13 +142,16 @@ pub fn runHelloWindow() !void {
         game_state.x += @as(f32, @floatFromInt(move_x)) * speed * dt_seconds;
         game_state.y += @as(f32, @floatFromInt(move_y)) * speed * dt_seconds;
 
+        render_state.x = game_state.x;
+        render_state.y = game_state.y;
+
         if (frame_index % 30 == 0 and (move_x != 0 or move_y != 0)) {
             std.log.info("input move: {d}, {d}", .{ move_x, move_y });
             std.log.info("position: {d}, {d}", .{ game_state.x, game_state.y });
         }
 
         // Render frame
-        try gpu.render();
+        try gpu.render(render_state);
 
         // Delay to run ~60FPS
         // TODO: Handle frame pacing with a proper frame limiter
