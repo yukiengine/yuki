@@ -20,8 +20,12 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // SDL
     exe.root_module.link_libc = true;
     exe.root_module.linkSystemLibrary("SDL3", .{ .use_pkg_config = .force });
+
+    // wgpu-native
+    exe.root_module.linkSystemLibrary("wgpu_native", .{ .use_pkg_config = .force });
 
     b.installArtifact(exe);
 

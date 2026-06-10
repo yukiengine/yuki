@@ -51,6 +51,30 @@
             ++ lib.optionals (pkgs ? SDL3_image) [ SDL3_image ]
             ++ lib.optionals (pkgs ? SDL3_ttf) [ SDL3_ttf ];
 
+          wgpuNativeDev = lib.getDev pkgs.wgpu-native;
+          wgpuNativeLib = lib.getLib pkgs.wgpu-native;
+
+          # nixpkgs' wgpu-native package ships headers and libwgpu_native.so,
+          # but no pkg-config file. Keep this shim local so build.zig can link
+          # it the same way it links SDL3.
+          wgpuNativePkgConfig = pkgs.writeTextDir "lib/pkgconfig/wgpu_native.pc" ''
+            prefix=${wgpuNativeLib}
+            includedir=${wgpuNativeDev}/include
+            libdir=${wgpuNativeLib}/lib
+
+            Name: wgpu-native
+            Description: Native WebGPU implementation based on wgpu-core
+            Version: ${pkgs.wgpu-native.version}
+            Cflags: -I${wgpuNativeDev}/include
+            Libs: -L${wgpuNativeLib}/lib -Wl,-rpath,${wgpuNativeLib}/lib -lwgpu_native
+          '';
+
+          wgpuPackages = [
+            wgpuNativeDev
+            wgpuNativeLib
+            wgpuNativePkgConfig
+          ];
+
           commonPackages =
             with pkgs;
             [
@@ -114,6 +138,7 @@
 
           runtimeLibs =
             sdlPackages
+            ++ [ wgpuNativeLib ]
             ++ lib.optionals isLinux (
               with pkgs;
               [
@@ -129,7 +154,7 @@
               ]
             );
 
-          basePackages = commonPackages ++ sdlPackages ++ linuxPackages ++ darwinPackages;
+          basePackages = commonPackages ++ sdlPackages ++ wgpuPackages ++ linuxPackages ++ darwinPackages;
 
           mkYukiShell =
             {
@@ -143,6 +168,8 @@
                 export YUKI_LINK_MODE="static"
                 export YUKI_RENDER_BACKEND="wgpu-native"
                 export YUKI_PLATFORM_BACKEND="sdl3"
+
+                export PKG_CONFIG_PATH="${wgpuNativePkgConfig}/lib/pkgconfig:$PKG_CONFIG_PATH"
 
                 export ZIG_LOCAL_CACHE_DIR="$PWD/.zig-cache/local"
                 export ZIG_GLOBAL_CACHE_DIR="$PWD/.zig-cache/global"
@@ -159,6 +186,7 @@
                 echo "Welcome to Yuki Engine"
                 echo "  Zig:        $(zig version 2>/dev/null || echo unavailable)"
                 echo "  SDL3:       $(pkg-config --modversion sdl3 2>/dev/null || echo available)"
+                echo "  wgpu-native: $(pkg-config --modversion wgpu_native 2>/dev/null || echo available)"
                 echo "  Renderer:   wgpu-native"
                 echo "  Link mode:  static-first"
                 echo "  Studio:     native Yuki app (later)"

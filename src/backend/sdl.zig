@@ -1,4 +1,5 @@
 const std = @import("std");
+const wgpu = @import("wgpu.zig");
 
 const c = @cImport({
     @cDefine("SDL_MAIN_HANDLED", "1");
@@ -6,7 +7,7 @@ const c = @cImport({
     @cInclude("SDL3/SDL_main.h");
 });
 
-pub const Error = error{ InitFailed, CreateWindowFailed, CreateRendererFailed, RenderFailed };
+pub const Error = error{ InitFailed, CreateWindowFailed, CreateRendererFailed, RenderFailed, GetWindowSizeFailed };
 
 pub fn runHelloWindow() !void {
     c.SDL_SetMainReady();
@@ -23,11 +24,15 @@ pub fn runHelloWindow() !void {
     };
     defer c.SDL_DestroyWindow(window);
 
-    const renderer = c.SDL_CreateRenderer(window, null) orelse {
-        std.log.err("SDL_CreateRenderer failed: {s}", .{c.SDL_GetError()});
-        return Error.CreateRendererFailed;
-    };
-    defer c.SDL_DestroyRenderer(renderer);
+    var width: c_int = 0;
+    var height: c_int = 0;
+    if (!c.SDL_GetWindowSizeInPixels(window, &width, &height)) {
+        std.log.err("SDL_GetWindowSizeInPixels failed: {s}", .{c.SDL_GetError()});
+        return Error.GetWindowSizeFailed;
+    }
+
+    var gpu = try wgpu.Gpu.init(@ptrCast(window), @intCast(width), @intCast(height));
+    defer gpu.deinit();
 
     var running = true;
     while (running) {
@@ -38,16 +43,8 @@ pub fn runHelloWindow() !void {
                 else => {},
             }
         }
-        if (!c.SDL_SetRenderDrawColor(renderer, 18, 22, 30, 255)) {
-            return Error.RenderFailed;
-        }
-        if (!c.SDL_RenderClear(renderer)) {
-            return Error.RenderFailed;
-        }
-        if (!c.SDL_RenderPresent(renderer)) {
-            return Error.RenderFailed;
-        }
 
+        try gpu.render();
         c.SDL_Delay(16);
     }
 }
