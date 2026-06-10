@@ -9,6 +9,32 @@ const sdl = @cImport({
     @cInclude("SDL3/SDL.h");
 });
 
+fn stringView(value: [:0]const u8) c.WGPUStringView {
+    return .{
+        .data = value.ptr,
+        .length = c.WGPU_STRLEN,
+    };
+}
+
+const triangle_shader =
+    \\@vertex
+    \\fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4f {
+    \\    var positions = array<vec2f, 3>(
+    \\        vec2f(0.0, 0.5),
+    \\        vec2f(-0.5, -0.5),
+    \\        vec2f(0.5, -0.5),
+    \\    );
+    \\
+    \\    let pos = positions[vertex_index];
+    \\    return vec4f(pos, 0.0, 1.0);
+    \\}
+    \\
+    \\@fragment
+    \\fn fs_main() -> @location(0) vec4f {
+    \\    return vec4f(1.0, 1.0, 1.0, 1.0);
+    \\}
+;
+
 pub const Error = error{
     CreateInstanceFailed,
     CreateSurfaceFailed,
@@ -23,6 +49,9 @@ pub const Error = error{
     CreateRenderPassFailed,
     CreateCommandBufferFailed,
     PresentFailed,
+    CreateShaderModuleFailed,
+    CreatePipelineLayoutFailed,
+    CreateRenderPipelineFailed,
 };
 
 /// Owns the wgpu objects needed to present frames into an SDL-created window
@@ -37,6 +66,7 @@ pub const Gpu = struct {
     queue: c.WGPUQueue,
     format: c.WGPUTextureFormat,
     alpha_mode: c.WGPUCompositeAlphaMode,
+    pipeline: c.WGPURenderPipeline,
 
     /// Creates a wgpu surface from the SDL window and configures it for presentation
     pub fn init(window_ptr: *anyopaque, width: u32, height: u32) !Gpu {
@@ -69,6 +99,9 @@ pub const Gpu = struct {
         const format = capabilities.formats[0];
         const alpha_mode = if (capabilities.alphaModeCount > 0) capabilities.alphaModes[0] else c.WGPUCompositeAlphaMode_Auto;
 
+        const pipeline = try createTrianglePipeline(device, format);
+        errdefer c.wgpuRenderPipelineRelease(pipeline);
+
         var config: c.WGPUSurfaceConfiguration = std.mem.zeroes(c.WGPUSurfaceConfiguration);
         config.device = device;
         config.format = format;
@@ -90,6 +123,7 @@ pub const Gpu = struct {
             .queue = queue,
             .format = format,
             .alpha_mode = alpha_mode,
+            .pipeline = pipeline,
         };
     }
 
@@ -123,8 +157,7 @@ pub const Gpu = struct {
         };
         defer c.wgpuTextureViewRelease(view);
 
-        var encoder_desc: c.WGPUCommandEncoderDescriptor =
-            std.mem.zeroes(c.WGPUCommandEncoderDescriptor);
+        var encoder_desc: c.WGPUCommandEncoderDescriptor = std.mem.zeroes(c.WGPUCommandEncoderDescriptor);
 
         const encoder = c.wgpuDeviceCreateCommandEncoder(self.device, &encoder_desc) orelse {
             return Error.CreateCommandEncoderFailed;
@@ -152,6 +185,9 @@ pub const Gpu = struct {
             return Error.CreateRenderPassFailed;
         };
 
+        c.wgpuRenderPassEncoderSetPipeline(pass, self.pipeline);
+        c.wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+
         c.wgpuRenderPassEncoderEnd(pass);
         c.wgpuRenderPassEncoderRelease(pass);
 
@@ -177,6 +213,7 @@ pub const Gpu = struct {
         c.wgpuAdapterRelease(self.adapter);
         c.wgpuSurfaceRelease(self.surface);
         c.wgpuInstanceRelease(self.instance);
+        c.wgpuRenderPipelineRelease(self.pipeline);
         self.* = undefined;
     }
 
@@ -338,6 +375,55 @@ fn createSurface(instance: c.WGPUInstance, window_ptr: *anyopaque) !c.WGPUSurfac
     }
 
     return Error.UnsupportedWindowBackend;
+}
+
+fn createTrianglePipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat) !c.WGPURenderPipeline {
+    var wgsl_source: c.WGPUShaderSourceWGSL = std.mem.zeroes(c.WGPUShaderSourceWGSL);
+    wgsl_source.chain.sType = c.WGPUSType_ShaderSourceWGSL;
+    wgsl_source.code = stringView(triangle_shader);
+
+    var shader_desc: c.WGPUShaderModuleDescriptor = std.mem.zeroes(c.WGPUShaderModuleDescriptor);
+    shader_desc.nextInChain = &wgsl_source.chain;
+    shader_desc.label = stringView("triangle shader");
+
+    const shader = c.wgpuDeviceCreateShaderModule(device, &shader_desc) orelse {
+        return Error.CreateShaderModuleFailed;
+    };
+    defer c.wgpuShaderModuleRelease(shader);
+
+    var layout_desc: c.WGPUPipelineLayoutDescriptor = std.mem.zeroes(c.WGPUPipelineLayoutDescriptor);
+    layout_desc.label = stringView("triangle pipeline layout");
+
+    const layout = c.wgpuDeviceCreatePipelineLayout(device, &layout_desc) orelse {
+        return Error.CreatePipelineLayoutFailed;
+    };
+    defer c.wgpuPipelineLayoutRelease(layout);
+
+    var color_target: c.WGPUColorTargetState = std.mem.zeroes(c.WGPUColorTargetState);
+    color_target.format = format;
+    color_target.writeMask = c.WGPUColorWriteMask_All;
+
+    var fragment: c.WGPUFragmentState = std.mem.zeroes(c.WGPUFragmentState);
+    fragment.module = shader;
+    fragment.entryPoint = stringView("fs_main");
+    fragment.targetCount = 1;
+    fragment.targets = &color_target;
+
+    var pipeline_desc: c.WGPURenderPipelineDescriptor = std.mem.zeroes(c.WGPURenderPipelineDescriptor);
+    pipeline_desc.label = stringView("triangle pipeline");
+    pipeline_desc.layout = layout;
+    pipeline_desc.vertex.module = shader;
+    pipeline_desc.vertex.entryPoint = stringView("vs_main");
+    pipeline_desc.primitive.topology = c.WGPUPrimitiveTopology_TriangleList;
+    pipeline_desc.primitive.frontFace = c.WGPUFrontFace_CCW;
+    pipeline_desc.primitive.cullMode = c.WGPUCullMode_None;
+    pipeline_desc.fragment = &fragment;
+    pipeline_desc.multisample.count = 1;
+    pipeline_desc.multisample.mask = 0xffffffff;
+
+    return c.wgpuDeviceCreateRenderPipeline(device, &pipeline_desc) orelse {
+        return Error.CreateRenderPipelineFailed;
+    };
 }
 
 // pub fn probeWindowBackend(window_ptr: *anyopaque) void {
