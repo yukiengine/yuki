@@ -30,6 +30,26 @@ const FrameClock = struct {
     }
 };
 
+/// Input handler
+const Input = struct {
+    left: bool = false,
+    right: bool = false,
+    up: bool = false,
+    down: bool = false,
+
+    fn boolToI32(value: bool) i32 {
+        return if (value) 1 else 0;
+    }
+
+    pub fn axisX(self: Input) i32 {
+        return boolToI32(self.right) - boolToI32(self.left);
+    }
+
+    pub fn axisY(self: Input) i32 {
+        return boolToI32(self.down) - boolToI32(self.up);
+    }
+};
+
 pub fn runHelloWindow() !void {
     c.SDL_SetMainReady();
 
@@ -58,6 +78,8 @@ pub fn runHelloWindow() !void {
     var clock = FrameClock.init();
     var frame_index: u64 = 0;
 
+    var input = Input{};
+
     var running = true;
     while (running) {
         // Event poling
@@ -75,6 +97,22 @@ pub fn runHelloWindow() !void {
                         gpu.resize(@intCast(width_new), @intCast(height_new));
                     }
                 },
+                c.SDL_EVENT_KEY_DOWN,
+                c.SDL_EVENT_KEY_UP,
+                => {
+                    const pressed = event.type == c.SDL_EVENT_KEY_DOWN;
+                    switch (event.key.key) {
+                        c.SDLK_ESCAPE => if (pressed) {
+                            running = false;
+                        },
+                        c.SDLK_A, c.SDLK_LEFT => input.left = pressed,
+                        c.SDLK_D, c.SDLK_RIGHT => input.right = pressed,
+                        c.SDLK_W, c.SDLK_UP => input.up = pressed,
+                        c.SDLK_S, c.SDLK_DOWN => input.down = pressed,
+                        else => {},
+                    }
+                },
+
                 else => {},
             }
         }
@@ -90,6 +128,13 @@ pub fn runHelloWindow() !void {
 
         // Render frame
         try gpu.render();
+
+        const move_x = input.axisX();
+        const move_y = input.axisY();
+
+        if (frame_index % 30 == 0 and (move_x != 0 or move_y != 0)) {
+            std.log.info("input move: {d}, {d}", .{ move_x, move_y });
+        }
 
         // Delay to run ~60FPS
         // TODO: Handle frame pacing with a proper frame limiter
