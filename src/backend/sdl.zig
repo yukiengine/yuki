@@ -1,11 +1,6 @@
 const std = @import("std");
 const wgpu = @import("wgpu.zig");
-
-const c = @cImport({
-    @cDefine("SDL_MAIN_HANDLED", "1");
-    @cInclude("SDL3/SDL.h");
-    @cInclude("SDL3/SDL_main.h");
-});
+const c = @import("sdl_c.zig").c;
 
 pub const Error = error{ InitFailed, CreateWindowFailed, CreateRendererFailed, RenderFailed, GetWindowSizeFailed };
 
