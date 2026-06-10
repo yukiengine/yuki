@@ -21,25 +21,35 @@ const Uniforms = extern struct {
     _pad: [2]f32 = .{ 0, 0 },
 };
 
+const Vertex = extern struct {
+    position: [2]f32,
+};
+
+const quad_vertices = [_]Vertex{
+    .{ .position = .{ -0.5, 0.5 } },
+    .{ .position = .{ -0.5, -0.5 } },
+    .{ .position = .{ 0.5, -0.5 } },
+
+    .{ .position = .{ -0.5, 0.5 } },
+    .{ .position = .{ 0.5, -0.5 } },
+    .{ .position = .{ 0.5, 0.5 } },
+};
+
 const quad_shader =
     \\struct Uniforms {
     \\    offset: vec2f,
     \\};
+    \\
+    \\struct VertexInput {
+    \\    @location(0) position: vec2f,
+    \\};
+    \\
     \\@group(0) @binding(0)
     \\var<uniform> uniforms: Uniforms;
+    \\
     \\@vertex
-    \\fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4f {
-    \\    var positions = array<vec2f, 6>(
-    \\        vec2f(-0.5,  0.5),
-    \\        vec2f(-0.5, -0.5),
-    \\        vec2f( 0.5, -0.5),
-    \\
-    \\        vec2f(-0.5,  0.5),
-    \\        vec2f( 0.5, -0.5),
-    \\        vec2f( 0.5,  0.5),
-    \\    );
-    \\
-    \\    let pos = positions[vertex_index] + uniforms.offset;
+    \\fn vs_main(input: VertexInput) -> @builtin(position) vec4f {
+    \\    let pos = input.position + uniforms.offset;
     \\    return vec4f(pos, 0.0, 1.0);
     \\}
     \\
@@ -69,6 +79,7 @@ pub const Error = error{
     CreateUniformBufferFailed,
     CreateBindGroupLayoutFailed,
     CreateBindGroupFailed,
+    CreateVertexBufferFailed,
 };
 
 /// Owns the wgpu objects needed to present frames into an SDL-created window
@@ -87,6 +98,7 @@ pub const Gpu = struct {
     uniform_buffer: c.WGPUBuffer,
     bind_group_layout: c.WGPUBindGroupLayout,
     bind_group: c.WGPUBindGroup,
+    vertex_buffer: c.WGPUBuffer,
 
     /// Creates a wgpu surface from the SDL window and configures it for presentation
     pub fn init(window_ptr: *anyopaque, width: u32, height: u32) !Gpu {
@@ -128,6 +140,9 @@ pub const Gpu = struct {
         const bind_group = try createQuadBindGroup(device, bind_group_layout, uniform_buffer);
         errdefer c.wgpuBindGroupRelease(bind_group);
 
+        const vertex_buffer = try createQuadVertexBuffer(device, queue);
+        errdefer c.wgpuBufferRelease(vertex_buffer);
+
         const pipeline = try createQuadPipeline(device, format, bind_group_layout);
         errdefer c.wgpuRenderPipelineRelease(pipeline);
 
@@ -156,6 +171,7 @@ pub const Gpu = struct {
             .uniform_buffer = uniform_buffer,
             .bind_group_layout = bind_group_layout,
             .bind_group = bind_group,
+            .vertex_buffer = vertex_buffer,
         };
     }
 
@@ -233,11 +249,14 @@ pub const Gpu = struct {
         };
 
         c.wgpuRenderPassEncoderSetPipeline(pass, self.pipeline);
-
-        c.wgpuRenderPassEncoderSetPipeline(pass, self.pipeline);
         c.wgpuRenderPassEncoderSetBindGroup(pass, 0, self.bind_group, 0, null);
-        c.wgpuRenderPassEncoderDraw(pass, 6, 1, 0, 0);
-
+        c.wgpuRenderPassEncoderSetVertexBuffer(
+            pass,
+            0,
+            self.vertex_buffer,
+            0,
+            quad_vertices.len * @sizeOf(Vertex),
+        );
         c.wgpuRenderPassEncoderDraw(pass, 6, 1, 0, 0);
 
         c.wgpuRenderPassEncoderEnd(pass);
@@ -264,6 +283,7 @@ pub const Gpu = struct {
         c.wgpuBindGroupRelease(self.bind_group);
         c.wgpuBindGroupLayoutRelease(self.bind_group_layout);
         c.wgpuBufferRelease(self.uniform_buffer);
+        c.wgpuBufferRelease(self.vertex_buffer);
         c.wgpuQueueRelease(self.queue);
         c.wgpuDeviceRelease(self.device);
         c.wgpuAdapterRelease(self.adapter);
@@ -443,7 +463,7 @@ fn createQuadPipeline(
 
     var shader_desc: c.WGPUShaderModuleDescriptor = std.mem.zeroes(c.WGPUShaderModuleDescriptor);
     shader_desc.nextInChain = &wgsl_source.chain;
-    shader_desc.label = stringView("triangle shader");
+    shader_desc.label = stringView("quad shader");
 
     const shader = c.wgpuDeviceCreateShaderModule(device, &shader_desc) orelse {
         return Error.CreateShaderModuleFailed;
@@ -472,11 +492,25 @@ fn createQuadPipeline(
     fragment.targetCount = 1;
     fragment.targets = &color_target;
 
+    var vertex_attributes = [_]c.WGPUVertexAttribute{.{
+        .format = c.WGPUVertexFormat_Float32x2,
+        .offset = 0,
+        .shaderLocation = 0,
+    }};
+
+    var vertex_buffer_layout: c.WGPUVertexBufferLayout = std.mem.zeroes(c.WGPUVertexBufferLayout);
+    vertex_buffer_layout.stepMode = c.WGPUVertexStepMode_Vertex;
+    vertex_buffer_layout.arrayStride = @sizeOf(Vertex);
+    vertex_buffer_layout.attributeCount = vertex_attributes.len;
+    vertex_buffer_layout.attributes = vertex_attributes[0..].ptr;
+
     var pipeline_desc: c.WGPURenderPipelineDescriptor = std.mem.zeroes(c.WGPURenderPipelineDescriptor);
     pipeline_desc.label = stringView("triangle pipeline");
     pipeline_desc.layout = layout;
     pipeline_desc.vertex.module = shader;
     pipeline_desc.vertex.entryPoint = stringView("vs_main");
+    pipeline_desc.vertex.bufferCount = 1;
+    pipeline_desc.vertex.buffers = &vertex_buffer_layout;
     pipeline_desc.primitive.topology = c.WGPUPrimitiveTopology_TriangleList;
     pipeline_desc.primitive.frontFace = c.WGPUFrontFace_CCW;
     pipeline_desc.primitive.cullMode = c.WGPUCullMode_None;
@@ -539,21 +573,25 @@ fn createQuadBindGroup(
     };
 }
 
-// pub fn probeWindowBackend(window_ptr: *anyopaque) void {
-//     const window: *sdl.SDL_Window = @ptrCast(@alignCast(window_ptr));
-//     const props = sdl.SDL_GetWindowProperties(window);
-//
-//     const wayland_display = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null);
-//     const wayland_surface = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null);
-//
-//     const x11_display = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_X11_DISPLAY_POINTER, null);
-//     const x11_surface = sdl.SDL_GetPointerProperty(props, sdl.SDL_PROP_WINDOW_X11_WINDOW_NUMBER, null);
-//
-//     if (wayland_display != null and wayland_surface != null) {
-//         std.debug.print("wgpu surface backend: wayland\n", .{});
-//     } else if (x11_display != null and x11_surface != null) {
-//         std.debug.print("wgpu surface backend: x11\n", .{});
-//     } else {
-//         std.debug.print("wgpu surface backend: unsupported/unknown\n", .{});
-//     }
-// }
+fn createQuadVertexBuffer(device: c.WGPUDevice, queue: c.WGPUQueue) !c.WGPUBuffer {
+    const vertex_data_size = quad_vertices.len * @sizeOf(Vertex);
+
+    var desc: c.WGPUBufferDescriptor = std.mem.zeroes(c.WGPUBufferDescriptor);
+    desc.label = stringView("quad vertex buffer");
+    desc.usage = c.WGPUBufferUsage_Vertex | c.WGPUBufferUsage_CopyDst;
+    desc.size = vertex_data_size;
+
+    const buffer = c.wgpuDeviceCreateBuffer(device, &desc) orelse {
+        return Error.CreateVertexBufferFailed;
+    };
+
+    c.wgpuQueueWriteBuffer(
+        queue,
+        buffer,
+        0,
+        quad_vertices[0..].ptr,
+        vertex_data_size,
+    );
+
+    return buffer;
+}
