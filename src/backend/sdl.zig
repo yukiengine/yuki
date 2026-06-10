@@ -18,7 +18,7 @@ pub fn runHelloWindow() !void {
     }
     defer c.SDL_Quit();
 
-    const window = c.SDL_CreateWindow("Yuki", 960, 540, 0) orelse {
+    const window = c.SDL_CreateWindow("Yuki", 960, 540, c.SDL_WINDOW_RESIZABLE) orelse {
         std.log.err("SDL_CreateWindow failed: {s}", .{c.SDL_GetError()});
         return Error.CreateWindowFailed;
     };
@@ -40,6 +40,16 @@ pub fn runHelloWindow() !void {
         while (c.SDL_PollEvent(&event)) {
             switch (event.type) {
                 c.SDL_EVENT_QUIT => running = false,
+                c.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED => {
+                    gpu.resize(@intCast(event.window.data1), @intCast(event.window.data2));
+                },
+                c.SDL_EVENT_WINDOW_RESIZED => {
+                    var width_new: c_int = 0;
+                    var height_new: c_int = 0;
+                    if (c.SDL_GetWindowSizeInPixels(window, &width_new, &height_new)) {
+                        gpu.resize(@intCast(width_new), @intCast(height_new));
+                    }
+                },
                 else => {},
             }
         }

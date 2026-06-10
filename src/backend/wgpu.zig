@@ -25,7 +25,7 @@ pub const Error = error{
     PresentFailed,
 };
 
-/// Owns the wgpu object needed to present frames into an SDL-created window
+/// Owns the wgpu objects needed to present frames into an SDL-created window
 pub const Gpu = struct {
     width: u32,
     height: u32,
@@ -36,8 +36,9 @@ pub const Gpu = struct {
     device: c.WGPUDevice,
     queue: c.WGPUQueue,
     format: c.WGPUTextureFormat,
+    alpha_mode: c.WGPUCompositeAlphaMode,
 
-    /// Creates a wgpu surface form the SDL window and configures it for presentation
+    /// Creates a wgpu surface from the SDL window and configures it for presentation
     pub fn init(window_ptr: *anyopaque, width: u32, height: u32) !Gpu {
         var desc: c.WGPUInstanceDescriptor = std.mem.zeroes(c.WGPUInstanceDescriptor);
 
@@ -88,6 +89,7 @@ pub const Gpu = struct {
             .device = device,
             .queue = queue,
             .format = format,
+            .alpha_mode = alpha_mode,
         };
     }
 
@@ -176,6 +178,26 @@ pub const Gpu = struct {
         c.wgpuSurfaceRelease(self.surface);
         c.wgpuInstanceRelease(self.instance);
         self.* = undefined;
+    }
+
+    /// Resizes the surface based on the given width and height
+    pub fn resize(self: *Gpu, width: u32, height: u32) void {
+        if (width == 0 or height == 0) return;
+
+        self.width = width;
+        self.height = height;
+
+        var config: c.WGPUSurfaceConfiguration = std.mem.zeroes(c.WGPUSurfaceConfiguration);
+        config.device = self.device;
+        config.format = self.format;
+        config.usage = c.WGPUTextureUsage_RenderAttachment;
+        config.width = width;
+        config.height = height;
+        config.alphaMode = self.alpha_mode;
+        config.presentMode = c.WGPUPresentMode_Fifo;
+
+        c.wgpuSurfaceConfigure(self.surface, &config);
+        // std.log.info("wgpu surface resized: {d}x{d}", .{ width, height });
     }
 };
 
