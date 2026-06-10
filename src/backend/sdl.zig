@@ -9,6 +9,11 @@ const c = @cImport({
 
 pub const Error = error{ InitFailed, CreateWindowFailed, CreateRendererFailed, RenderFailed, GetWindowSizeFailed };
 
+const GameState = struct {
+    x: f32 = 0.0,
+    y: f32 = 0.0,
+};
+
 /// Delta time
 const FrameClock = struct {
     last_counter: u64,
@@ -79,6 +84,7 @@ pub fn runHelloWindow() !void {
     var frame_index: u64 = 0;
 
     var input = Input{};
+    var game_state = GameState{};
 
     var running = true;
     while (running) {
@@ -126,15 +132,22 @@ pub fn runHelloWindow() !void {
             std.log.info("frame dt: {d:.4}s", .{dt});
         }
 
-        // Render frame
-        try gpu.render();
-
         const move_x = input.axisX();
         const move_y = input.axisY();
 
+        const speed: f32 = 240.0; // units per second
+        const dt_seconds: f32 = @floatCast(dt);
+
+        game_state.x += @as(f32, @floatFromInt(move_x)) * speed * dt_seconds;
+        game_state.y += @as(f32, @floatFromInt(move_y)) * speed * dt_seconds;
+
         if (frame_index % 30 == 0 and (move_x != 0 or move_y != 0)) {
             std.log.info("input move: {d}, {d}", .{ move_x, move_y });
+            std.log.info("position: {d}, {d}", .{ game_state.x, game_state.y });
         }
+
+        // Render frame
+        try gpu.render();
 
         // Delay to run ~60FPS
         // TODO: Handle frame pacing with a proper frame limiter
