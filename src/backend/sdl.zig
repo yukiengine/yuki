@@ -9,6 +9,27 @@ const c = @cImport({
 
 pub const Error = error{ InitFailed, CreateWindowFailed, CreateRendererFailed, RenderFailed, GetWindowSizeFailed };
 
+/// Delta time
+const FrameClock = struct {
+    last_counter: u64,
+    frequency: u64,
+
+    pub fn init() FrameClock {
+        return .{
+            .last_counter = c.SDL_GetPerformanceCounter(),
+            .frequency = c.SDL_GetPerformanceFrequency(),
+        };
+    }
+
+    pub fn tick(self: *FrameClock) f64 {
+        const now = c.SDL_GetPerformanceCounter();
+        const delta = now - self.last_counter;
+        self.last_counter = now;
+
+        return @as(f64, @floatFromInt(delta)) / @as(f64, @floatFromInt(self.frequency));
+    }
+};
+
 pub fn runHelloWindow() !void {
     c.SDL_SetMainReady();
 
@@ -34,8 +55,12 @@ pub fn runHelloWindow() !void {
     var gpu = try wgpu.Gpu.init(@ptrCast(window), @intCast(width), @intCast(height));
     defer gpu.deinit();
 
+    var clock = FrameClock.init();
+    var frame_index: u64 = 0;
+
     var running = true;
     while (running) {
+        // Event poling
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -54,7 +79,20 @@ pub fn runHelloWindow() !void {
             }
         }
 
+        // Delta time calculations
+        const dt = clock.tick();
+        frame_index += 1;
+
+        // Logging every 120 FPS
+        if (frame_index % 120 == 0) {
+            std.log.info("frame dt: {d:.4}s", .{dt});
+        }
+
+        // Render frame
         try gpu.render();
+
+        // Delay to run ~60FPS
+        // TODO: Handle frame pacing with a proper frame limiter
         c.SDL_Delay(16);
     }
 }
