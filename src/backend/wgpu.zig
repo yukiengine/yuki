@@ -16,13 +16,17 @@ fn stringView(value: [:0]const u8) c.WGPUStringView {
     };
 }
 
-const triangle_shader =
+const quad_shader =
     \\@vertex
     \\fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4f {
-    \\    var positions = array<vec2f, 3>(
-    \\        vec2f(0.0, 0.5),
+    \\    var positions = array<vec2f, 6>(
+    \\        vec2f(-0.5,  0.5),
     \\        vec2f(-0.5, -0.5),
-    \\        vec2f(0.5, -0.5),
+    \\        vec2f( 0.5, -0.5),
+    \\
+    \\        vec2f(-0.5,  0.5),
+    \\        vec2f( 0.5, -0.5),
+    \\        vec2f( 0.5,  0.5),
     \\    );
     \\
     \\    let pos = positions[vertex_index];
@@ -99,7 +103,7 @@ pub const Gpu = struct {
         const format = capabilities.formats[0];
         const alpha_mode = if (capabilities.alphaModeCount > 0) capabilities.alphaModes[0] else c.WGPUCompositeAlphaMode_Auto;
 
-        const pipeline = try createTrianglePipeline(device, format);
+        const pipeline = try createQuadPipeline(device, format);
         errdefer c.wgpuRenderPipelineRelease(pipeline);
 
         var config: c.WGPUSurfaceConfiguration = std.mem.zeroes(c.WGPUSurfaceConfiguration);
@@ -186,7 +190,7 @@ pub const Gpu = struct {
         };
 
         c.wgpuRenderPassEncoderSetPipeline(pass, self.pipeline);
-        c.wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+        c.wgpuRenderPassEncoderDraw(pass, 6, 1, 0, 0);
 
         c.wgpuRenderPassEncoderEnd(pass);
         c.wgpuRenderPassEncoderRelease(pass);
@@ -208,12 +212,12 @@ pub const Gpu = struct {
 
     /// Releases wgpu handles owned by this GPU context
     pub fn deinit(self: *Gpu) void {
+        c.wgpuRenderPipelineRelease(self.pipeline);
         c.wgpuQueueRelease(self.queue);
         c.wgpuDeviceRelease(self.device);
         c.wgpuAdapterRelease(self.adapter);
         c.wgpuSurfaceRelease(self.surface);
         c.wgpuInstanceRelease(self.instance);
-        c.wgpuRenderPipelineRelease(self.pipeline);
         self.* = undefined;
     }
 
@@ -377,10 +381,10 @@ fn createSurface(instance: c.WGPUInstance, window_ptr: *anyopaque) !c.WGPUSurfac
     return Error.UnsupportedWindowBackend;
 }
 
-fn createTrianglePipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat) !c.WGPURenderPipeline {
+fn createQuadPipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat) !c.WGPURenderPipeline {
     var wgsl_source: c.WGPUShaderSourceWGSL = std.mem.zeroes(c.WGPUShaderSourceWGSL);
     wgsl_source.chain.sType = c.WGPUSType_ShaderSourceWGSL;
-    wgsl_source.code = stringView(triangle_shader);
+    wgsl_source.code = stringView(quad_shader);
 
     var shader_desc: c.WGPUShaderModuleDescriptor = std.mem.zeroes(c.WGPUShaderModuleDescriptor);
     shader_desc.nextInChain = &wgsl_source.chain;
