@@ -20,9 +20,6 @@ pub const Error = error{
     CreateShaderModuleFailed,
     CreatePipelineLayoutFailed,
     CreateRenderPipelineFailed,
-    CreateUniformBufferFailed,
-    CreateBindGroupLayoutFailed,
-    CreateBindGroupFailed,
     CreateVertexBufferFailed,
 };
 
@@ -82,7 +79,7 @@ pub const Gpu = struct {
         config.presentMode = c.WGPUPresentMode_Fifo;
         c.wgpuSurfaceConfigure(surface, &config);
 
-        var renderer_2d = try render2d.Renderer2D.init(device, queue, format);
+        var renderer_2d = try render2d.Renderer2D.init(device, format);
         errdefer renderer_2d.deinit();
 
         return Gpu{
@@ -100,7 +97,13 @@ pub const Gpu = struct {
     }
 
     /// Clears and presents one frame
-    pub fn render(self: *Gpu, state: RenderState) !void {
+    pub fn render(self: *Gpu, quads: []const render2d.Quad) !void {
+        self.renderer_2d.beginFrame();
+        for (quads) |quad| {
+            self.renderer_2d.drawQuad(quad);
+        }
+
+        // Acquire surface texture
         var surface_texture: c.WGPUSurfaceTexture = std.mem.zeroes(c.WGPUSurfaceTexture);
         c.wgpuSurfaceGetCurrentTexture(self.surface, &surface_texture);
 
@@ -113,8 +116,8 @@ pub const Gpu = struct {
 
         defer c.wgpuTextureRelease(surface_texture.texture);
 
-        var view_desc: c.WGPUTextureViewDescriptor =
-            std.mem.zeroes(c.WGPUTextureViewDescriptor);
+        // Create view
+        var view_desc: c.WGPUTextureViewDescriptor = std.mem.zeroes(c.WGPUTextureViewDescriptor);
         view_desc.format = self.format;
         view_desc.dimension = c.WGPUTextureViewDimension_2D;
         view_desc.baseMipLevel = 0;
@@ -129,27 +132,29 @@ pub const Gpu = struct {
         };
         defer c.wgpuTextureViewRelease(view);
 
+        // Create encoder
         var encoder_desc: c.WGPUCommandEncoderDescriptor = std.mem.zeroes(c.WGPUCommandEncoderDescriptor);
-
         const encoder = c.wgpuDeviceCreateCommandEncoder(self.device, &encoder_desc) orelse {
             return Error.CreateCommandEncoderFailed;
         };
         defer c.wgpuCommandEncoderRelease(encoder);
 
+        // Begin render pass
         var color_attachment: c.WGPURenderPassColorAttachment = std.mem.zeroes(c.WGPURenderPassColorAttachment);
         color_attachment.view = view;
         color_attachment.depthSlice = c.WGPU_DEPTH_SLICE_UNDEFINED;
         color_attachment.loadOp = c.WGPULoadOp_Clear;
         color_attachment.storeOp = c.WGPUStoreOp_Store;
         color_attachment.clearValue = .{
-            .r = std.math.clamp(state.x / 500.0, 0.0, 1.0),
-            .g = std.math.clamp(state.y / 500.0, 0.0, 1.0),
+            // .r = std.math.clamp(state.x / 500.0, 0.0, 1.0),
+            // .g = std.math.clamp(state.y / 500.0, 0.0, 1.0),
+            .r = 0.5,
+            .g = 0.5,
             .b = 0.16,
             .a = 1.0,
         };
 
-        var pass_desc: c.WGPURenderPassDescriptor =
-            std.mem.zeroes(c.WGPURenderPassDescriptor);
+        var pass_desc: c.WGPURenderPassDescriptor = std.mem.zeroes(c.WGPURenderPassDescriptor);
         pass_desc.colorAttachmentCount = 1;
         pass_desc.colorAttachments = &color_attachment;
 
@@ -157,32 +162,22 @@ pub const Gpu = struct {
             return Error.CreateRenderPassFailed;
         };
 
-        // c.wgpuRenderPassEncoderSetPipeline(pass, self.pipeline);
-        // c.wgpuRenderPassEncoderSetBindGroup(pass, 0, self.bind_group, 0, null);
-        // c.wgpuRenderPassEncoderSetVertexBuffer(
-        //     pass,
-        //     0,
-        //     self.vertex_buffer,
-        //     0,
-        //     quad_vertices.len * @sizeOf(Vertex),
-        // );
-        // c.wgpuRenderPassEncoderDraw(pass, 6, 1, 0, 0);
+        self.renderer_2d.flush(self.queue, pass, self.width, self.height);
 
-        self.renderer_2d.draw(self.queue, pass, state.x, state.y, self.width, self.height);
-
+        // End pass
         c.wgpuRenderPassEncoderEnd(pass);
         c.wgpuRenderPassEncoderRelease(pass);
 
-        var command_desc: c.WGPUCommandBufferDescriptor =
-            std.mem.zeroes(c.WGPUCommandBufferDescriptor);
-
+        var command_desc: c.WGPUCommandBufferDescriptor = std.mem.zeroes(c.WGPUCommandBufferDescriptor);
         const command = c.wgpuCommandEncoderFinish(encoder, &command_desc) orelse {
             return Error.CreateCommandBufferFailed;
         };
         defer c.wgpuCommandBufferRelease(command);
 
+        // Submit
         c.wgpuQueueSubmit(self.queue, 1, &command);
 
+        // Present
         if (c.wgpuSurfacePresent(self.surface) != c.WGPUStatus_Success) {
             return Error.PresentFailed;
         }
@@ -220,11 +215,6 @@ pub const Gpu = struct {
         c.wgpuSurfaceConfigure(self.surface, &config);
         // std.log.info("wgpu surface resized: {d}x{d}", .{ width, height });
     }
-};
-
-pub const RenderState = struct {
-    x: f32 = 0.0,
-    y: f32 = 0.0,
 };
 
 const AdapterRequest = struct {

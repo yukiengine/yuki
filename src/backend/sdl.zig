@@ -1,6 +1,7 @@
 const std = @import("std");
 const wgpu = @import("wgpu.zig");
 const c = @import("sdl_c.zig").c;
+const render2d = @import("../render2d/renderer.zig");
 
 pub const Error = error{ InitFailed, CreateWindowFailed, CreateRendererFailed, RenderFailed, GetWindowSizeFailed };
 
@@ -80,7 +81,6 @@ pub fn runHelloWindow() !void {
 
     var input = Input{};
     var game_state = GameState{};
-    var render_state = wgpu.RenderState{};
 
     var running = true;
     while (running) {
@@ -137,16 +137,33 @@ pub fn runHelloWindow() !void {
         game_state.x += @as(f32, @floatFromInt(move_x)) * speed * dt_seconds;
         game_state.y += @as(f32, @floatFromInt(move_y)) * speed * dt_seconds;
 
-        render_state.x = game_state.x;
-        render_state.y = game_state.y;
-
         if (frame_index % 30 == 0 and (move_x != 0 or move_y != 0)) {
             std.log.info("input move: {d}, {d}", .{ move_x, move_y });
             std.log.info("position: {d}, {d}", .{ game_state.x, game_state.y });
         }
 
         // Render frame
-        try gpu.render(render_state);
+
+        const window_width: f32 = @floatFromInt(gpu.width);
+        const window_height: f32 = @floatFromInt(gpu.height);
+
+        const quads = [_]render2d.Quad{
+            .{
+                .position = .{
+                    .x = window_width * 0.5 + game_state.x,
+                    .y = window_height * 0.5 + game_state.y,
+                },
+                .size = .{ .x = 96.0, .y = 96.0 },
+                .color = .{ .r = 1.0, .g = 0.0, .b = 0.0, .a = 1.0 },
+            },
+            .{
+                .position = .{ .x = 160.0, .y = 160.0 },
+                .size = .{ .x = 64.0, .y = 64.0 },
+                .color = .{ .r = 0.0, .g = 1.0, .b = 0.0, .a = 1.0 },
+            },
+        };
+
+        try gpu.render(quads[0..]);
 
         // Delay to run ~60FPS
         // TODO: Handle frame pacing with a proper frame limiter

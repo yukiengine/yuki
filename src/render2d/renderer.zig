@@ -1,142 +1,151 @@
 const std = @import("std");
 const c = @import("../backend/webgpu_c.zig").c;
 
+const max_quads = 128;
+const vertices_per_quad = 6;
+const max_vertices = max_quads * vertices_per_quad;
+
 pub const Error = error{
     CreateShaderModuleFailed,
     CreatePipelineLayoutFailed,
     CreateRenderPipelineFailed,
-    CreateUniformBufferFailed,
-    CreateBindGroupLayoutFailed,
-    CreateBindGroupFailed,
     CreateVertexBufferFailed,
 };
 
-const Uniforms = extern struct {
-    offset: [2]f32,
-    _pad: [2]f32 = .{ 0, 0 },
+pub const Vec2 = extern struct {
+    x: f32,
+    y: f32,
 };
 
 const Vertex = extern struct {
-    position: [2]f32,
+    position: Vec2,
+    color: ColorRgba,
 };
 
-const quad_vertices = [_]Vertex{
-    .{ .position = .{ -0.5, 0.5 } },
-    .{ .position = .{ -0.5, -0.5 } },
-    .{ .position = .{ 0.5, -0.5 } },
+pub const ColorRgba = extern struct {
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+};
 
-    .{ .position = .{ -0.5, 0.5 } },
-    .{ .position = .{ 0.5, -0.5 } },
-    .{ .position = .{ 0.5, 0.5 } },
+pub const Quad = struct {
+    position: Vec2,
+    size: Vec2,
+    color: ColorRgba,
 };
 
 const quad_shader =
-    \\struct Uniforms {
-    \\    offset: vec2f,
-    \\};
-    \\
     \\struct VertexInput {
     \\    @location(0) position: vec2f,
+    \\    @location(1) color: vec4f,
     \\};
     \\
-    \\@group(0) @binding(0)
-    \\var<uniform> uniforms: Uniforms;
+    \\struct VertexOutput {
+    \\    @builtin(position) position: vec4f,
+    \\    @location(0) color: vec4f,
+    \\};
     \\
     \\@vertex
-    \\fn vs_main(input: VertexInput) -> @builtin(position) vec4f {
-    \\    let pos = input.position + uniforms.offset;
-    \\    return vec4f(pos, 0.0, 1.0);
+    \\fn vs_main(input: VertexInput) -> VertexOutput {
+    \\    var output: VertexOutput;
+    \\    output.position = vec4f(input.position, 0.0, 1.0);
+    \\    output.color = input.color;
+    \\    return output;
     \\}
     \\
     \\@fragment
-    \\fn fs_main() -> @location(0) vec4f {
-    \\    return vec4f(1.0, 1.0, 1.0, 1.0);
+    \\fn fs_main(input: VertexOutput) -> @location(0) vec4f {
+    \\    return input.color;
     \\}
 ;
 
 pub const Renderer2D = struct {
     pipeline: c.WGPURenderPipeline,
-    uniform_buffer: c.WGPUBuffer,
-    bind_group_layout: c.WGPUBindGroupLayout,
-    bind_group: c.WGPUBindGroup,
     vertex_buffer: c.WGPUBuffer,
-
-    pub fn init(device: c.WGPUDevice, queue: c.WGPUQueue, format: c.WGPUTextureFormat) !Renderer2D {
-        const uniform_buffer = try createUniformBuffer(device);
-        errdefer c.wgpuBufferRelease(uniform_buffer);
-
-        const bind_group_layout = try createQuadBindGroupLayout(device);
-        errdefer c.wgpuBindGroupLayoutRelease(bind_group_layout);
-
-        const bind_group = try createQuadBindGroup(device, bind_group_layout, uniform_buffer);
-        errdefer c.wgpuBindGroupRelease(bind_group);
-
-        const vertex_buffer = try createQuadVertexBuffer(device, queue);
+    quads: [max_quads]Quad,
+    vertices: [max_vertices]Vertex,
+    quad_count: usize,
+    pub fn init(device: c.WGPUDevice, format: c.WGPUTextureFormat) !Renderer2D {
+        const vertex_buffer = try createQuadVertexBuffer(device);
         errdefer c.wgpuBufferRelease(vertex_buffer);
 
-        const pipeline = try createQuadPipeline(device, format, bind_group_layout);
+        const pipeline = try createQuadPipeline(device, format);
         errdefer c.wgpuRenderPipelineRelease(pipeline);
 
         return Renderer2D{
             .pipeline = pipeline,
-            .uniform_buffer = uniform_buffer,
-            .bind_group_layout = bind_group_layout,
-            .bind_group = bind_group,
             .vertex_buffer = vertex_buffer,
+            .quads = undefined,
+            .vertices = undefined,
+            .quad_count = 0,
         };
     }
 
     pub fn deinit(self: *Renderer2D) void {
         c.wgpuRenderPipelineRelease(self.pipeline);
-        c.wgpuBindGroupRelease(self.bind_group);
-        c.wgpuBindGroupLayoutRelease(self.bind_group_layout);
-        c.wgpuBufferRelease(self.uniform_buffer);
         c.wgpuBufferRelease(self.vertex_buffer);
         self.* = undefined;
     }
 
-    pub fn draw(
+    pub fn flush(
         self: *Renderer2D,
         queue: c.WGPUQueue,
         pass: c.WGPURenderPassEncoder,
-        x: f32,
-        y: f32,
         surface_width: u32,
         surface_height: u32,
     ) void {
-        const uniforms = Uniforms{
-            .offset = .{
-                (x / @as(f32, @floatFromInt(surface_width))) * 2.0,
-                (y / @as(f32, @floatFromInt(surface_height))) * -2.0,
-            },
-        };
+        if (self.quad_count == 0) return;
 
-        c.wgpuQueueWriteBuffer(
-            queue,
-            self.uniform_buffer,
-            0,
-            &uniforms,
-            @sizeOf(Uniforms),
-        );
+        const vertex_count = self.buildQuadVertices(surface_width, surface_height);
+        const vertex_data_size = vertex_count * @sizeOf(Vertex);
 
+        c.wgpuQueueWriteBuffer(queue, self.vertex_buffer, 0, self.vertices[0..vertex_count].ptr, vertex_data_size);
         c.wgpuRenderPassEncoderSetPipeline(pass, self.pipeline);
-        c.wgpuRenderPassEncoderSetBindGroup(pass, 0, self.bind_group, 0, null);
-        c.wgpuRenderPassEncoderSetVertexBuffer(
-            pass,
-            0,
-            self.vertex_buffer,
-            0,
-            quad_vertices.len * @sizeOf(Vertex),
-        );
-        c.wgpuRenderPassEncoderDraw(pass, 6, 1, 0, 0);
+        c.wgpuRenderPassEncoderSetVertexBuffer(pass, 0, self.vertex_buffer, 0, self.vertices.len * @sizeOf(Vertex));
+        c.wgpuRenderPassEncoderDraw(pass, @intCast(vertex_count), 1, 0, 0);
+    }
+
+    pub fn beginFrame(self: *Renderer2D) void {
+        self.quad_count = 0;
+    }
+
+    pub fn drawQuad(self: *Renderer2D, quad: Quad) void {
+        std.debug.assert(self.quad_count < max_quads);
+        if (self.quad_count == max_quads) return;
+
+        self.quads[self.quad_count] = quad;
+        self.quad_count += 1;
+    }
+
+    fn buildQuadVertices(self: *Renderer2D, surface_width: u32, surface_height: u32) usize {
+        var vertex_count: usize = 0;
+
+        for (self.quads[0..self.quad_count]) |quad| {
+            const half_width = quad.size.x * 0.5;
+            const half_height = quad.size.y * 0.5;
+
+            const left = screenToClipX(quad.position.x - half_width, surface_width);
+            const right = screenToClipX(quad.position.x + half_width, surface_width);
+            const top = screenToClipY(quad.position.y - half_height, surface_height);
+            const bottom = screenToClipY(quad.position.y + half_height, surface_height);
+
+            self.vertices[vertex_count + 0] = .{ .position = .{ .x = left, .y = top }, .color = quad.color };
+            self.vertices[vertex_count + 1] = .{ .position = .{ .x = left, .y = bottom }, .color = quad.color };
+            self.vertices[vertex_count + 2] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color };
+
+            self.vertices[vertex_count + 3] = .{ .position = .{ .x = left, .y = top }, .color = quad.color };
+            self.vertices[vertex_count + 4] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color };
+            self.vertices[vertex_count + 5] = .{ .position = .{ .x = right, .y = top }, .color = quad.color };
+
+            vertex_count += vertices_per_quad;
+        }
+
+        return vertex_count;
     }
 };
 
-fn createQuadPipeline(
-    device: c.WGPUDevice,
-    format: c.WGPUTextureFormat,
-    bind_group_layout: c.WGPUBindGroupLayout,
-) !c.WGPURenderPipeline {
+fn createQuadPipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat) !c.WGPURenderPipeline {
     var wgsl_source: c.WGPUShaderSourceWGSL = std.mem.zeroes(c.WGPUShaderSourceWGSL);
     wgsl_source.chain.sType = c.WGPUSType_ShaderSourceWGSL;
     wgsl_source.code = stringView(quad_shader);
@@ -150,12 +159,8 @@ fn createQuadPipeline(
     };
     defer c.wgpuShaderModuleRelease(shader);
 
-    var bind_group_layouts = [_]c.WGPUBindGroupLayout{bind_group_layout};
-
     var layout_desc: c.WGPUPipelineLayoutDescriptor = std.mem.zeroes(c.WGPUPipelineLayoutDescriptor);
     layout_desc.label = stringView("quad pipeline layout");
-    layout_desc.bindGroupLayoutCount = bind_group_layouts.len;
-    layout_desc.bindGroupLayouts = bind_group_layouts[0..].ptr;
 
     const layout = c.wgpuDeviceCreatePipelineLayout(device, &layout_desc) orelse {
         return Error.CreatePipelineLayoutFailed;
@@ -172,11 +177,18 @@ fn createQuadPipeline(
     fragment.targetCount = 1;
     fragment.targets = &color_target;
 
-    var vertex_attributes = [_]c.WGPUVertexAttribute{.{
-        .format = c.WGPUVertexFormat_Float32x2,
-        .offset = 0,
-        .shaderLocation = 0,
-    }};
+    var vertex_attributes = [_]c.WGPUVertexAttribute{
+        .{
+            .format = c.WGPUVertexFormat_Float32x2,
+            .offset = @offsetOf(Vertex, "position"),
+            .shaderLocation = 0,
+        },
+        .{
+            .format = c.WGPUVertexFormat_Float32x4,
+            .offset = @offsetOf(Vertex, "color"),
+            .shaderLocation = 1,
+        },
+    };
 
     var vertex_buffer_layout: c.WGPUVertexBufferLayout = std.mem.zeroes(c.WGPUVertexBufferLayout);
     vertex_buffer_layout.stepMode = c.WGPUVertexStepMode_Vertex;
@@ -203,77 +215,15 @@ fn createQuadPipeline(
     };
 }
 
-fn createUniformBuffer(device: c.WGPUDevice) !c.WGPUBuffer {
-    var desc: c.WGPUBufferDescriptor = std.mem.zeroes(c.WGPUBufferDescriptor);
-    desc.label = stringView("quad uniforms");
-    desc.usage = c.WGPUBufferUsage_Uniform | c.WGPUBufferUsage_CopyDst;
-    desc.size = @sizeOf(Uniforms);
-
-    return c.wgpuDeviceCreateBuffer(device, &desc) orelse {
-        return Error.CreateUniformBufferFailed;
-    };
-}
-
-fn createQuadBindGroupLayout(device: c.WGPUDevice) !c.WGPUBindGroupLayout {
-    var entry: c.WGPUBindGroupLayoutEntry = std.mem.zeroes(c.WGPUBindGroupLayoutEntry);
-    entry.binding = 0;
-    entry.visibility = c.WGPUShaderStage_Vertex;
-    entry.buffer.type = c.WGPUBufferBindingType_Uniform;
-    entry.buffer.minBindingSize = @sizeOf(Uniforms);
-
-    var desc: c.WGPUBindGroupLayoutDescriptor = std.mem.zeroes(c.WGPUBindGroupLayoutDescriptor);
-    desc.label = stringView("quad bind group layout");
-    desc.entryCount = 1;
-    desc.entries = &entry;
-
-    return c.wgpuDeviceCreateBindGroupLayout(device, &desc) orelse {
-        return Error.CreateBindGroupLayoutFailed;
-    };
-}
-
-fn createQuadBindGroup(
-    device: c.WGPUDevice,
-    layout: c.WGPUBindGroupLayout,
-    uniform_buffer: c.WGPUBuffer,
-) !c.WGPUBindGroup {
-    var entry: c.WGPUBindGroupEntry = std.mem.zeroes(c.WGPUBindGroupEntry);
-    entry.binding = 0;
-    entry.buffer = uniform_buffer;
-    entry.offset = 0;
-    entry.size = @sizeOf(Uniforms);
-
-    var desc: c.WGPUBindGroupDescriptor = std.mem.zeroes(c.WGPUBindGroupDescriptor);
-    desc.label = stringView("quad bind group");
-    desc.layout = layout;
-    desc.entryCount = 1;
-    desc.entries = &entry;
-
-    return c.wgpuDeviceCreateBindGroup(device, &desc) orelse {
-        return Error.CreateBindGroupFailed;
-    };
-}
-
-fn createQuadVertexBuffer(device: c.WGPUDevice, queue: c.WGPUQueue) !c.WGPUBuffer {
-    const vertex_data_size = quad_vertices.len * @sizeOf(Vertex);
-
+fn createQuadVertexBuffer(device: c.WGPUDevice) !c.WGPUBuffer {
     var desc: c.WGPUBufferDescriptor = std.mem.zeroes(c.WGPUBufferDescriptor);
     desc.label = stringView("quad vertex buffer");
     desc.usage = c.WGPUBufferUsage_Vertex | c.WGPUBufferUsage_CopyDst;
-    desc.size = vertex_data_size;
+    desc.size = max_vertices * @sizeOf(Vertex);
 
-    const buffer = c.wgpuDeviceCreateBuffer(device, &desc) orelse {
+    return c.wgpuDeviceCreateBuffer(device, &desc) orelse {
         return Error.CreateVertexBufferFailed;
     };
-
-    c.wgpuQueueWriteBuffer(
-        queue,
-        buffer,
-        0,
-        quad_vertices[0..].ptr,
-        vertex_data_size,
-    );
-
-    return buffer;
 }
 
 fn stringView(value: [:0]const u8) c.WGPUStringView {
@@ -281,4 +231,12 @@ fn stringView(value: [:0]const u8) c.WGPUStringView {
         .data = value.ptr,
         .length = c.WGPU_STRLEN,
     };
+}
+
+fn screenToClipX(x: f32, surface_width: u32) f32 {
+    return (x / @as(f32, @floatFromInt(surface_width))) * 2.0 - 1.0;
+}
+
+fn screenToClipY(y: f32, surface_height: u32) f32 {
+    return 1.0 - (y / @as(f32, @floatFromInt(surface_height))) * 2.0;
 }
