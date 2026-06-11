@@ -17,6 +17,9 @@ pub const Error = error{
     CreateSamplerFailed,
     CreateBindGroupFailed,
     TextureTableFull,
+    InvalidTextureSize,
+    InvalidTextureData,
+    TooManyQuads,
 };
 
 pub const Vector2 = extern struct {
@@ -25,6 +28,27 @@ pub const Vector2 = extern struct {
 
     pub fn xy(x: f32, y: f32) Vector2 {
         return .{ .x = x, .y = y };
+    }
+};
+
+pub const Transform2D = struct {
+    position: Vector2,
+    size: Vector2,
+    rotation_radians: f32 = 0.0,
+
+    pub fn init(position: Vector2, size: Vector2) Transform2D {
+        return .{
+            .position = position,
+            .size = size,
+        };
+    }
+
+    pub fn rotated(position: Vector2, size: Vector2, rotation_radians: f32) Transform2D {
+        return .{
+            .position = position,
+            .size = size,
+            .rotation_radians = rotation_radians,
+        };
     }
 };
 
@@ -66,36 +90,67 @@ pub const UvRect = extern struct {
 };
 
 pub const Quad = struct {
-    position: Vector2,
-    size: Vector2,
+    transform: Transform2D,
     color: ColorRgba,
     texture: TextureId = TextureId.default(),
     uv: UvRect = UvRect.full(),
+    layer: i32 = 0,
 
     pub fn init(position: Vector2, size: Vector2, color: ColorRgba) Quad {
         return .{
-            .position = position,
-            .size = size,
+            .transform = Transform2D.init(position, size),
             .color = color,
         };
     }
 
-    pub fn textured(position: Vector2, size: Vector2, color: ColorRgba, texture: TextureId) Quad {
+    pub fn sprite(position: Vector2, size: Vector2, sprite_value: Sprite) Quad {
         return .{
-            .position = position,
-            .size = size,
-            .color = color,
+            .transform = Transform2D.init(position, size),
+            .color = sprite_value.tint,
+            .texture = sprite_value.texture,
+            .uv = sprite_value.uv,
+        };
+    }
+
+    pub fn spriteTransform(transform: Transform2D, sprite_value: Sprite) Quad {
+        return .{
+            .transform = transform,
+            .color = sprite_value.tint,
+            .texture = sprite_value.texture,
+            .uv = sprite_value.uv,
+        };
+    }
+
+    pub fn withLayer(self: Quad, layer: i32) Quad {
+        var quad = self;
+        quad.layer = layer;
+        return quad;
+    }
+};
+
+pub const Sprite = struct {
+    texture: TextureId = TextureId.default(),
+    uv: UvRect = UvRect.full(),
+    tint: ColorRgba = ColorRgba.rgb(1.0, 1.0, 1.0),
+
+    pub fn init(texture: TextureId) Sprite {
+        return .{
             .texture = texture,
         };
     }
 
-    pub fn texturedRegion(position: Vector2, size: Vector2, color: ColorRgba, texture: TextureId, uv: UvRect) Quad {
+    pub fn region(texture: TextureId, uv: UvRect) Sprite {
         return .{
-            .position = position,
-            .size = size,
-            .color = color,
             .texture = texture,
             .uv = uv,
+        };
+    }
+
+    pub fn tinted(texture: TextureId, uv: UvRect, tint: ColorRgba) Sprite {
+        return .{
+            .texture = texture,
+            .uv = uv,
+            .tint = tint,
         };
     }
 };
@@ -133,6 +188,118 @@ pub const Frame = struct {
             .camera = camera,
             .quads = quads,
         };
+    }
+};
+
+pub const DrawList = struct {
+    quads: [max_quads]Quad,
+    quad_count: usize,
+
+    pub fn init() DrawList {
+        return .{
+            .quads = undefined,
+            .quad_count = 0,
+        };
+    }
+
+    pub fn drawQuad(self: *DrawList, quad: Quad) !void {
+        if (self.quad_count == max_quads) return Error.TooManyQuads;
+
+        self.quads[self.quad_count] = quad;
+        self.quad_count += 1;
+    }
+
+    pub fn drawSprite(self: *DrawList, position: Vector2, size: Vector2, sprite: Sprite) !void {
+        try self.drawQuad(Quad.sprite(position, size, sprite));
+    }
+
+    pub fn items(self: *const DrawList) []const Quad {
+        return self.quads[0..self.quad_count];
+    }
+
+    pub fn frame(self: *const DrawList, clear_color: ColorRgba, camera: Camera2D) Frame {
+        return Frame.withCamera(clear_color, camera, self.items());
+    }
+
+    pub fn beginFrame(self: *DrawList) void {
+        self.quad_count = 0;
+    }
+
+    pub fn drawSpriteTransform(self: *DrawList, transform: Transform2D, sprite: Sprite) !void {
+        try self.drawQuad(Quad.spriteTransform(transform, sprite));
+    }
+
+    fn lessThanLayer(_: void, lhs: Quad, rhs: Quad) bool {
+        return lhs.layer < rhs.layer;
+    }
+
+    pub fn sortByLayer(self: *DrawList) void {
+        std.mem.sort(Quad, self.quads[0..self.quad_count], {}, lessThanLayer);
+    }
+
+    pub fn drawSpriteLayer(self: *DrawList, position: Vector2, size: Vector2, sprite: Sprite, layer: i32) !void {
+        try self.drawQuad(Quad.sprite(position, size, sprite).withLayer(layer));
+    }
+
+    pub fn drawSpriteTransformLayer(self: *DrawList, transform: Transform2D, sprite: Sprite, layer: i32) !void {
+        try self.drawQuad(Quad.spriteTransform(transform, sprite).withLayer(layer));
+    }
+
+    pub fn sortedFrame(self: *DrawList, clear_color: ColorRgba, camera: Camera2D) Frame {
+        self.sortByLayer();
+        return self.frame(clear_color, camera);
+    }
+};
+
+pub const TextureAtlas = struct {
+    texture: TextureId,
+    width: u32,
+    height: u32,
+
+    pub fn init(texture: TextureId, width: u32, height: u32) TextureAtlas {
+        std.debug.assert(width > 0);
+        std.debug.assert(height > 0);
+
+        return .{
+            .texture = texture,
+            .width = width,
+            .height = height,
+        };
+    }
+
+    pub fn uvPixels(self: TextureAtlas, x: u32, y: u32, width: u32, height: u32) UvRect {
+        std.debug.assert(width > 0);
+        std.debug.assert(height > 0);
+        std.debug.assert(x < self.width);
+        std.debug.assert(y < self.height);
+        std.debug.assert(width <= self.width - x);
+        std.debug.assert(height <= self.height - y);
+
+        const atlas_width = @as(f32, @floatFromInt(self.width));
+        const atlas_height = @as(f32, @floatFromInt(self.height));
+
+        const left = @as(f32, @floatFromInt(x)) / atlas_width;
+        const top = @as(f32, @floatFromInt(y)) / atlas_height;
+        const right = @as(f32, @floatFromInt(x + width)) / atlas_width;
+        const bottom = @as(f32, @floatFromInt(y + height)) / atlas_height;
+
+        return UvRect.init(
+            Vector2.xy(left, top),
+            Vector2.xy(right, bottom),
+        );
+    }
+
+    pub fn spritePixels(self: TextureAtlas, x: u32, y: u32, width: u32, height: u32) Sprite {
+        return Sprite.region(self.texture, self.uvPixels(x, y, width, height));
+    }
+
+    pub fn spriteGrid(self: TextureAtlas, column: u32, row: u32, cell_width: u32, cell_height: u32) Sprite {
+        return self.spritePixels(
+            column * cell_width,
+            row * cell_height,
+            cell_width,
+            cell_height,
+        );
     }
 };
 
@@ -297,26 +464,77 @@ pub const Renderer2D = struct {
         var vertex_count: usize = 0;
 
         for (self.quads[0..self.quad_count]) |quad| {
-            const half_width = quad.size.x * 0.5;
-            const half_height = quad.size.y * 0.5;
+            const half_width = quad.transform.size.x * 0.5;
+            const half_height = quad.transform.size.y * 0.5;
 
-            const left = worldToClipX(quad.position.x - half_width, surface_width, camera);
-            const right = worldToClipX(quad.position.x + half_width, surface_width, camera);
-            const top = worldToClipY(quad.position.y - half_height, surface_height, camera);
-            const bottom = worldToClipY(quad.position.y + half_height, surface_height, camera);
+            const local_top_left = rotatePoint(Vector2.xy(-half_width, -half_height), quad.transform.rotation_radians);
+            const local_bottom_left = rotatePoint(Vector2.xy(-half_width, half_height), quad.transform.rotation_radians);
+            const local_bottom_right = rotatePoint(Vector2.xy(half_width, half_height), quad.transform.rotation_radians);
+            const local_top_right = rotatePoint(Vector2.xy(half_width, -half_height), quad.transform.rotation_radians);
+
+            const top_left = Vector2.xy(quad.transform.position.x + local_top_left.x, quad.transform.position.y + local_top_left.y);
+            const bottom_left = Vector2.xy(quad.transform.position.x + local_bottom_left.x, quad.transform.position.y + local_bottom_left.y);
+            const bottom_right = Vector2.xy(quad.transform.position.x + local_bottom_right.x, quad.transform.position.y + local_bottom_right.y);
+            const top_right = Vector2.xy(quad.transform.position.x + local_top_right.x, quad.transform.position.y + local_top_right.y);
 
             const uv_left = quad.uv.min.x;
             const uv_top = quad.uv.min.y;
             const uv_right = quad.uv.max.x;
             const uv_bottom = quad.uv.max.y;
 
-            self.vertices[vertex_count + 0] = .{ .position = .{ .x = left, .y = top }, .color = quad.color, .uv = Vector2.xy(uv_left, uv_top) };
-            self.vertices[vertex_count + 1] = .{ .position = .{ .x = left, .y = bottom }, .color = quad.color, .uv = Vector2.xy(uv_left, uv_bottom) };
-            self.vertices[vertex_count + 2] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color, .uv = Vector2.xy(uv_right, uv_bottom) };
+            self.vertices[vertex_count + 0] = .{
+                .position = Vector2.xy(
+                    worldToClipX(top_left.x, surface_width, camera),
+                    worldToClipY(top_left.y, surface_height, camera),
+                ),
+                .color = quad.color,
+                .uv = Vector2.xy(uv_left, uv_top),
+            };
 
-            self.vertices[vertex_count + 3] = .{ .position = .{ .x = left, .y = top }, .color = quad.color, .uv = Vector2.xy(uv_left, uv_top) };
-            self.vertices[vertex_count + 4] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color, .uv = Vector2.xy(uv_right, uv_bottom) };
-            self.vertices[vertex_count + 5] = .{ .position = .{ .x = right, .y = top }, .color = quad.color, .uv = Vector2.xy(uv_right, uv_top) };
+            self.vertices[vertex_count + 1] = .{
+                .position = Vector2.xy(
+                    worldToClipX(bottom_left.x, surface_width, camera),
+                    worldToClipY(bottom_left.y, surface_height, camera),
+                ),
+                .color = quad.color,
+                .uv = Vector2.xy(uv_left, uv_bottom),
+            };
+
+            self.vertices[vertex_count + 2] = .{
+                .position = Vector2.xy(
+                    worldToClipX(bottom_right.x, surface_width, camera),
+                    worldToClipY(bottom_right.y, surface_height, camera),
+                ),
+                .color = quad.color,
+                .uv = Vector2.xy(uv_right, uv_bottom),
+            };
+
+            self.vertices[vertex_count + 3] = .{
+                .position = Vector2.xy(
+                    worldToClipX(top_left.x, surface_width, camera),
+                    worldToClipY(top_left.y, surface_height, camera),
+                ),
+                .color = quad.color,
+                .uv = Vector2.xy(uv_left, uv_top),
+            };
+
+            self.vertices[vertex_count + 4] = .{
+                .position = Vector2.xy(
+                    worldToClipX(bottom_right.x, surface_width, camera),
+                    worldToClipY(bottom_right.y, surface_height, camera),
+                ),
+                .color = quad.color,
+                .uv = Vector2.xy(uv_right, uv_bottom),
+            };
+
+            self.vertices[vertex_count + 5] = .{
+                .position = Vector2.xy(
+                    worldToClipX(top_right.x, surface_width, camera),
+                    worldToClipY(top_right.y, surface_height, camera),
+                ),
+                .color = quad.color,
+                .uv = Vector2.xy(uv_right, uv_top),
+            };
 
             vertex_count += vertices_per_quad;
         }
@@ -485,6 +703,16 @@ fn worldToClipY(y: f32, surface_height: u32, camera: Camera2D) f32 {
     return screenToClipY(screen_y, surface_height);
 }
 
+fn rotatePoint(point: Vector2, rotation_radians: f32) Vector2 {
+    const cos_angle = @cos(rotation_radians);
+    const sin_angle = @sin(rotation_radians);
+
+    return Vector2.xy(
+        point.x * cos_angle - point.y * sin_angle,
+        point.x * sin_angle + point.y * cos_angle,
+    );
+}
+
 fn createTextureBindGroupLayout(device: c.WGPUDevice) !c.WGPUBindGroupLayout {
     var entries = [_]c.WGPUBindGroupLayoutEntry{
         std.mem.zeroes(c.WGPUBindGroupLayoutEntry),
@@ -602,8 +830,15 @@ fn createTexture2DFromRgbaPixels(
     height: u32,
     pixels: []const u8,
 ) !Texture2D {
+    if (width == 0 or height == 0) {
+        return Error.InvalidTextureSize;
+    }
+
     const expected_size = @as(usize, @intCast(width)) * @as(usize, @intCast(height)) * 4;
-    std.debug.assert(pixels.len == expected_size); // TODO: make it return an error
+
+    if (pixels.len != expected_size) {
+        return Error.InvalidTextureData;
+    }
 
     var desc: c.WGPUTextureDescriptor = std.mem.zeroes(c.WGPUTextureDescriptor);
     desc.label = stringView(label);

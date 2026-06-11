@@ -8,6 +8,7 @@ pub const Error = error{ InitFailed, CreateWindowFailed, CreateRendererFailed, R
 const GameState = struct {
     x: f32 = 0.0,
     y: f32 = 0.0,
+    rotation: f32 = 0.0,
 };
 
 /// Delta time
@@ -83,18 +84,16 @@ pub fn runHelloWindow() !void {
         255, 0, 255, 255, // pink
     };
 
-    const debug_texture = try gpu.createTextureFromRgbaPixels(
-        "debug texture",
-        2,
-        2,
-        debug_pixels[0..],
-    );
+    const debug_texture = try gpu.createTextureFromRgbaPixels("debug texture", 2, 2, debug_pixels[0..]);
+    const debug_atlas = render2d.TextureAtlas.init(debug_texture, 2, 2);
 
     var clock = FrameClock.init();
     var frame_index: u64 = 0;
 
     var input = Input{};
     var game_state = GameState{};
+
+    var draw_list = render2d.DrawList.init();
 
     var running = true;
     while (running) {
@@ -142,6 +141,7 @@ pub fn runHelloWindow() !void {
             std.log.info("frame dt: {d:.4}s", .{dt});
         }
 
+        // Movement
         const move_x = input.axisX();
         const move_y = input.axisY();
 
@@ -156,30 +156,39 @@ pub fn runHelloWindow() !void {
             std.log.info("position: {d}, {d}", .{ game_state.x, game_state.y });
         }
 
+        // Rotation
+        const spin_speed: f32 = 2.0; // radians per second
+        game_state.rotation += spin_speed * dt_seconds;
+        const tau: f32 = std.math.tau;
+        if (game_state.rotation >= tau) {
+            game_state.rotation -= tau;
+        }
+
         // Render frame
+        draw_list.beginFrame();
+
         const camera = render2d.Camera2D.init(render2d.Vector2.xy(0.0, 0.0), 1.0);
 
-        const quads = [_]render2d.Quad{
-            render2d.Quad.init(
+        try draw_list.drawSpriteTransformLayer(
+            render2d.Transform2D.rotated(
                 render2d.Vector2.xy(game_state.x, game_state.y),
-                render2d.Vector2.xy(96.0, 96.0),
-                render2d.ColorRgba.rgb(1.0, 1.0, 1.0),
-            ),
-            render2d.Quad.texturedRegion(
-                render2d.Vector2.xy(-180.0, -120.0),
                 render2d.Vector2.xy(80.0, 80.0),
-                render2d.ColorRgba.rgb(1.0, 1.0, 1.0),
-                debug_texture,
-                render2d.UvRect.init(
-                    render2d.Vector2.xy(0.0, 0.0),
-                    render2d.Vector2.xy(0.5, 0.5),
-                ),
+                game_state.rotation,
             ),
-        };
-        try gpu.render(render2d.Frame.withCamera(
+            debug_atlas.spritePixels(1, 0, 1, 1),
+            10,
+        );
+
+        try draw_list.drawSpriteLayer(
+            render2d.Vector2.xy(-180.0, -120.0),
+            render2d.Vector2.xy(80.0, 80.0),
+            debug_atlas.spritePixels(0, 0, 1, 1),
+            0,
+        );
+
+        try gpu.render(draw_list.sortedFrame(
             render2d.ColorRgba.rgb(0.05, 0.06, 0.08),
             camera,
-            quads[0..],
         ));
 
         // Delay to run ~60FPS
