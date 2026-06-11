@@ -160,7 +160,7 @@ pub const Gpu = struct {
             return Error.CreateRenderPassFailed;
         };
 
-        self.renderer_2d.flush(self.queue, pass, self.width, self.height);
+        self.renderer_2d.flush(self.queue, pass, self.width, self.height, frame.camera);
 
         // End pass
         c.wgpuRenderPassEncoderEnd(pass);

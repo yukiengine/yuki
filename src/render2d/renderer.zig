@@ -55,13 +55,37 @@ pub const Quad = struct {
     }
 };
 
+pub const Camera2D = struct {
+    position: Vec2 = .{ .x = 0.0, .y = 0.0 },
+    zoom: f32 = 1.0,
+
+    pub fn init(position: Vec2, zoom: f32) Camera2D {
+        std.debug.assert(zoom > 0.0);
+
+        return .{
+            .position = position,
+            .zoom = zoom,
+        };
+    }
+};
+
 pub const Frame = struct {
     clear_color: ColorRgba,
     quads: []const Quad,
+    camera: Camera2D,
 
     pub fn init(clear_color: ColorRgba, quads: []const Quad) Frame {
         return .{
             .clear_color = clear_color,
+            .quads = quads,
+            .camera = .{},
+        };
+    }
+
+    pub fn withCamera(clear_color: ColorRgba, camera: Camera2D, quads: []const Quad) Frame {
+        return .{
+            .clear_color = clear_color,
+            .camera = camera,
             .quads = quads,
         };
     }
@@ -126,10 +150,11 @@ pub const Renderer2D = struct {
         pass: c.WGPURenderPassEncoder,
         surface_width: u32,
         surface_height: u32,
+        camera: Camera2D,
     ) void {
         if (self.quad_count == 0) return;
 
-        const vertex_count = self.buildQuadVertices(surface_width, surface_height);
+        const vertex_count = self.buildQuadVertices(surface_width, surface_height, camera);
         const vertex_data_size = vertex_count * @sizeOf(Vertex);
 
         c.wgpuQueueWriteBuffer(queue, self.vertex_buffer, 0, self.vertices[0..vertex_count].ptr, vertex_data_size);
@@ -150,17 +175,17 @@ pub const Renderer2D = struct {
         self.quad_count += 1;
     }
 
-    fn buildQuadVertices(self: *Renderer2D, surface_width: u32, surface_height: u32) usize {
+    fn buildQuadVertices(self: *Renderer2D, surface_width: u32, surface_height: u32, camera: Camera2D) usize {
         var vertex_count: usize = 0;
 
         for (self.quads[0..self.quad_count]) |quad| {
             const half_width = quad.size.x * 0.5;
             const half_height = quad.size.y * 0.5;
 
-            const left = screenToClipX(quad.position.x - half_width, surface_width);
-            const right = screenToClipX(quad.position.x + half_width, surface_width);
-            const top = screenToClipY(quad.position.y - half_height, surface_height);
-            const bottom = screenToClipY(quad.position.y + half_height, surface_height);
+            const left = worldToClipX(quad.position.x - half_width, surface_width, camera);
+            const right = worldToClipX(quad.position.x + half_width, surface_width, camera);
+            const top = worldToClipY(quad.position.y - half_height, surface_height, camera);
+            const bottom = worldToClipY(quad.position.y + half_height, surface_height, camera);
 
             self.vertices[vertex_count + 0] = .{ .position = .{ .x = left, .y = top }, .color = quad.color };
             self.vertices[vertex_count + 1] = .{ .position = .{ .x = left, .y = bottom }, .color = quad.color };
@@ -271,4 +296,16 @@ fn screenToClipX(x: f32, surface_width: u32) f32 {
 
 fn screenToClipY(y: f32, surface_height: u32) f32 {
     return 1.0 - (y / @as(f32, @floatFromInt(surface_height))) * 2.0;
+}
+
+fn worldToClipX(x: f32, surface_width: u32, camera: Camera2D) f32 {
+    const half_width = @as(f32, @floatFromInt(surface_width)) * 0.5;
+    const screen_x = (x - camera.position.x) * camera.zoom + half_width;
+    return screenToClipX(screen_x, surface_width);
+}
+
+fn worldToClipY(y: f32, surface_height: u32, camera: Camera2D) f32 {
+    const half_height = @as(f32, @floatFromInt(surface_height)) * 0.5;
+    const screen_y = (y - camera.position.y) * camera.zoom + half_height;
+    return screenToClipY(screen_y, surface_height);
 }
