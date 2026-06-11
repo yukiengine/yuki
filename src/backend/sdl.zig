@@ -76,6 +76,20 @@ pub fn runHelloWindow() !void {
     var gpu = try wgpu.Gpu.init(@ptrCast(window), @intCast(width), @intCast(height));
     defer gpu.deinit();
 
+    const debug_pixels = [_]u8{
+        255, 0, 255, 255, // pink
+        0, 255, 255, 255, // cyan
+        0, 255, 255, 255, // cyan
+        255, 0, 255, 255, // pink
+    };
+
+    const debug_texture = try gpu.createTextureFromRgbaPixels(
+        "debug texture",
+        2,
+        2,
+        debug_pixels[0..],
+    );
+
     var clock = FrameClock.init();
     var frame_index: u64 = 0;
 
@@ -151,10 +165,15 @@ pub fn runHelloWindow() !void {
                 render2d.Vector2.xy(96.0, 96.0),
                 render2d.ColorRgba.rgb(1.0, 1.0, 1.0),
             ),
-            render2d.Quad.init(
+            render2d.Quad.texturedRegion(
                 render2d.Vector2.xy(-180.0, -120.0),
                 render2d.Vector2.xy(80.0, 80.0),
-                render2d.ColorRgba.rgb(0.0, 1.0, 0.0),
+                render2d.ColorRgba.rgb(1.0, 1.0, 1.0),
+                debug_texture,
+                render2d.UvRect.init(
+                    render2d.Vector2.xy(0.0, 0.0),
+                    render2d.Vector2.xy(0.5, 0.5),
+                ),
             ),
         };
         try gpu.render(render2d.Frame.withCamera(

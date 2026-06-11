@@ -213,6 +213,23 @@ pub const Gpu = struct {
         c.wgpuSurfaceConfigure(self.surface, &config);
         // std.log.info("wgpu surface resized: {d}x{d}", .{ width, height });
     }
+
+    pub fn createTextureFromRgbaPixels(
+        self: *Gpu,
+        label: [:0]const u8,
+        width: u32,
+        height: u32,
+        pixels: []const u8,
+    ) !render2d.TextureId {
+        return self.renderer_2d.createTextureFromRgbaPixels(
+            self.device,
+            self.queue,
+            label,
+            width,
+            height,
+            pixels,
+        );
+    }
 };
 
 const AdapterRequest = struct {

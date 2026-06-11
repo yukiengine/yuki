@@ -4,6 +4,7 @@ const c = @import("../backend/webgpu_c.zig").c;
 const max_quads = 128;
 const vertices_per_quad = 6;
 const max_vertices = max_quads * vertices_per_quad;
+const max_textures = 8;
 
 pub const Error = error{
     CreateShaderModuleFailed,
@@ -15,6 +16,7 @@ pub const Error = error{
     CreateTextureViewFailed,
     CreateSamplerFailed,
     CreateBindGroupFailed,
+    TextureTableFull,
 };
 
 pub const Vector2 = extern struct {
@@ -47,11 +49,28 @@ pub const ColorRgba = extern struct {
     }
 };
 
+pub const UvRect = extern struct {
+    min: Vector2,
+    max: Vector2,
+
+    pub fn full() UvRect {
+        return .{
+            .min = Vector2.xy(0.0, 0.0),
+            .max = Vector2.xy(1.0, 1.0),
+        };
+    }
+
+    pub fn init(min: Vector2, max: Vector2) UvRect {
+        return .{ .min = min, .max = max };
+    }
+};
+
 pub const Quad = struct {
     position: Vector2,
     size: Vector2,
     color: ColorRgba,
     texture: TextureId = TextureId.default(),
+    uv: UvRect = UvRect.full(),
 
     pub fn init(position: Vector2, size: Vector2, color: ColorRgba) Quad {
         return .{
@@ -67,6 +86,16 @@ pub const Quad = struct {
             .size = size,
             .color = color,
             .texture = texture,
+        };
+    }
+
+    pub fn texturedRegion(position: Vector2, size: Vector2, color: ColorRgba, texture: TextureId, uv: UvRect) Quad {
+        return .{
+            .position = position,
+            .size = size,
+            .color = color,
+            .texture = texture,
+            .uv = uv,
         };
     }
 };
@@ -168,7 +197,8 @@ pub const Renderer2D = struct {
     quad_count: usize,
     texture_bind_group_layout: c.WGPUBindGroupLayout,
     sampler: c.WGPUSampler,
-    default_texture: Texture2D,
+    textures: [max_textures]Texture2D,
+    texture_count: usize,
 
     pub fn init(device: c.WGPUDevice, queue: c.WGPUQueue, format: c.WGPUTextureFormat) !Renderer2D {
         const vertex_buffer = try createQuadVertexBuffer(device);
@@ -180,18 +210,10 @@ pub const Renderer2D = struct {
         const sampler = try createSampler(device);
         errdefer c.wgpuSamplerRelease(sampler);
 
-        var default_texture = try createCheckerTexture(
-            device,
-            queue,
-            texture_bind_group_layout,
-            sampler,
-        );
-        errdefer default_texture.deinit();
-
         const pipeline = try createQuadPipeline(device, format, texture_bind_group_layout);
         errdefer c.wgpuRenderPipelineRelease(pipeline);
 
-        return .{
+        var renderer = Renderer2D{
             .pipeline = pipeline,
             .vertex_buffer = vertex_buffer,
             .quads = undefined,
@@ -199,12 +221,34 @@ pub const Renderer2D = struct {
             .quad_count = 0,
             .texture_bind_group_layout = texture_bind_group_layout,
             .sampler = sampler,
-            .default_texture = default_texture,
+            .textures = undefined,
+            .texture_count = 0,
         };
+        errdefer {
+            var index: usize = renderer.texture_count;
+            while (index > 0) {
+                index -= 1;
+                renderer.textures[index].deinit();
+            }
+        }
+
+        _ = renderer.addTexture(try createCheckerTexture(
+            device,
+            queue,
+            texture_bind_group_layout,
+            sampler,
+        ));
+
+        return renderer;
     }
 
     pub fn deinit(self: *Renderer2D) void {
-        self.default_texture.deinit();
+        var index: usize = self.texture_count;
+        while (index > 0) {
+            index -= 1;
+            self.textures[index].deinit();
+        }
+
         c.wgpuSamplerRelease(self.sampler);
         c.wgpuBindGroupLayoutRelease(self.texture_bind_group_layout);
         c.wgpuRenderPipelineRelease(self.pipeline);
@@ -261,13 +305,18 @@ pub const Renderer2D = struct {
             const top = worldToClipY(quad.position.y - half_height, surface_height, camera);
             const bottom = worldToClipY(quad.position.y + half_height, surface_height, camera);
 
-            self.vertices[vertex_count + 0] = .{ .position = .{ .x = left, .y = top }, .color = quad.color, .uv = Vector2.xy(0.0, 0.0) };
-            self.vertices[vertex_count + 1] = .{ .position = .{ .x = left, .y = bottom }, .color = quad.color, .uv = Vector2.xy(0.0, 1.0) };
-            self.vertices[vertex_count + 2] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color, .uv = Vector2.xy(1.0, 1.0) };
+            const uv_left = quad.uv.min.x;
+            const uv_top = quad.uv.min.y;
+            const uv_right = quad.uv.max.x;
+            const uv_bottom = quad.uv.max.y;
 
-            self.vertices[vertex_count + 3] = .{ .position = .{ .x = left, .y = top }, .color = quad.color, .uv = Vector2.xy(0.0, 0.0) };
-            self.vertices[vertex_count + 4] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color, .uv = Vector2.xy(1.0, 1.0) };
-            self.vertices[vertex_count + 5] = .{ .position = .{ .x = right, .y = top }, .color = quad.color, .uv = Vector2.xy(1.0, 0.0) };
+            self.vertices[vertex_count + 0] = .{ .position = .{ .x = left, .y = top }, .color = quad.color, .uv = Vector2.xy(uv_left, uv_top) };
+            self.vertices[vertex_count + 1] = .{ .position = .{ .x = left, .y = bottom }, .color = quad.color, .uv = Vector2.xy(uv_left, uv_bottom) };
+            self.vertices[vertex_count + 2] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color, .uv = Vector2.xy(uv_right, uv_bottom) };
+
+            self.vertices[vertex_count + 3] = .{ .position = .{ .x = left, .y = top }, .color = quad.color, .uv = Vector2.xy(uv_left, uv_top) };
+            self.vertices[vertex_count + 4] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color, .uv = Vector2.xy(uv_right, uv_bottom) };
+            self.vertices[vertex_count + 5] = .{ .position = .{ .x = right, .y = top }, .color = quad.color, .uv = Vector2.xy(uv_right, uv_top) };
 
             vertex_count += vertices_per_quad;
         }
@@ -276,8 +325,46 @@ pub const Renderer2D = struct {
     }
 
     fn textureBindGroup(self: *const Renderer2D, texture: TextureId) c.WGPUBindGroup {
-        std.debug.assert(texture.index == 0);
-        return self.default_texture.bind_group;
+        const index: usize = @intCast(texture.index);
+        std.debug.assert(index < self.texture_count);
+
+        return self.textures[index].bind_group;
+    }
+
+    fn addTexture(self: *Renderer2D, texture: Texture2D) TextureId {
+        std.debug.assert(self.texture_count < max_textures);
+
+        const id = TextureId{ .index = @intCast(self.texture_count) };
+        self.textures[self.texture_count] = texture;
+        self.texture_count += 1;
+
+        return id;
+    }
+
+    pub fn createTextureFromRgbaPixels(
+        self: *Renderer2D,
+        device: c.WGPUDevice,
+        queue: c.WGPUQueue,
+        label: [:0]const u8,
+        width: u32,
+        height: u32,
+        pixels: []const u8,
+    ) !TextureId {
+        if (self.texture_count == max_textures) return Error.TextureTableFull;
+
+        var texture = try createTexture2DFromRgbaPixels(
+            device,
+            queue,
+            self.texture_bind_group_layout,
+            self.sampler,
+            label,
+            width,
+            height,
+            pixels,
+        );
+        errdefer texture.deinit();
+
+        return self.addTexture(texture);
     }
 };
 
@@ -516,7 +603,7 @@ fn createTexture2DFromRgbaPixels(
     pixels: []const u8,
 ) !Texture2D {
     const expected_size = @as(usize, @intCast(width)) * @as(usize, @intCast(height)) * 4;
-    std.debug.assert(pixels.len == expected_size);
+    std.debug.assert(pixels.len == expected_size); // TODO: make it return an error
 
     var desc: c.WGPUTextureDescriptor = std.mem.zeroes(c.WGPUTextureDescriptor);
     desc.label = stringView(label);
