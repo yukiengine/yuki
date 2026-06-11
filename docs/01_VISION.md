@@ -16,7 +16,7 @@ Users should be able to write simple Luau code:
 player.inventory:add(Items.Potion, 3)
 Dialogue.start("dialogue.blacksmith_intro")
 World.spawn(Prefabs.Slime, {
-    position = Vec2.new(120, 80)
+    position = Vector2.new(120, 80)
 })
 ```
 

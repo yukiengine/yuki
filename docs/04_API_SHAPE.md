@@ -9,7 +9,7 @@ Luau is for normal game code. Zig is for engine internals and native extensions.
 Users should call game concepts:
 
 ```lua
-World.spawn(Prefabs.Player, { position = Vec2.new(32, 64) })
+World.spawn(Prefabs.Player, { position = Vector2.new(32, 64) })
 player.inventory:add(Items.Potion, 3)
 Dialogue.start("dialogue.blacksmith_intro")
 UI.open("inventory")

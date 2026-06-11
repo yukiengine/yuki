@@ -12,18 +12,19 @@ pub const Error = error{
     CreateVertexBufferFailed,
 };
 
-pub const Vec2 = extern struct {
+pub const Vector2 = extern struct {
     x: f32,
     y: f32,
 
-    pub fn xy(x: f32, y: f32) Vec2 {
+    pub fn xy(x: f32, y: f32) Vector2 {
         return .{ .x = x, .y = y };
     }
 };
 
 const Vertex = extern struct {
-    position: Vec2,
+    position: Vector2,
     color: ColorRgba,
+    uv: Vector2,
 };
 
 pub const ColorRgba = extern struct {
@@ -42,11 +43,11 @@ pub const ColorRgba = extern struct {
 };
 
 pub const Quad = struct {
-    position: Vec2,
-    size: Vec2,
+    position: Vector2,
+    size: Vector2,
     color: ColorRgba,
 
-    pub fn init(position: Vec2, size: Vec2, color: ColorRgba) Quad {
+    pub fn init(position: Vector2, size: Vector2, color: ColorRgba) Quad {
         return .{
             .position = position,
             .size = size,
@@ -56,10 +57,10 @@ pub const Quad = struct {
 };
 
 pub const Camera2D = struct {
-    position: Vec2 = .{ .x = 0.0, .y = 0.0 },
+    position: Vector2 = .{ .x = 0.0, .y = 0.0 },
     zoom: f32 = 1.0,
 
-    pub fn init(position: Vec2, zoom: f32) Camera2D {
+    pub fn init(position: Vector2, zoom: f32) Camera2D {
         std.debug.assert(zoom > 0.0);
 
         return .{
@@ -95,11 +96,13 @@ const quad_shader =
     \\struct VertexInput {
     \\    @location(0) position: vec2f,
     \\    @location(1) color: vec4f,
+    \\    @location(2) uv: vec2f,
     \\};
     \\
     \\struct VertexOutput {
     \\    @builtin(position) position: vec4f,
     \\    @location(0) color: vec4f,
+    \\    @location(1) uv: vec2f,
     \\};
     \\
     \\@vertex
@@ -107,6 +110,7 @@ const quad_shader =
     \\    var output: VertexOutput;
     \\    output.position = vec4f(input.position, 0.0, 1.0);
     \\    output.color = input.color;
+    \\    output.uv = input.uv;
     \\    return output;
     \\}
     \\
@@ -187,13 +191,13 @@ pub const Renderer2D = struct {
             const top = worldToClipY(quad.position.y - half_height, surface_height, camera);
             const bottom = worldToClipY(quad.position.y + half_height, surface_height, camera);
 
-            self.vertices[vertex_count + 0] = .{ .position = .{ .x = left, .y = top }, .color = quad.color };
-            self.vertices[vertex_count + 1] = .{ .position = .{ .x = left, .y = bottom }, .color = quad.color };
-            self.vertices[vertex_count + 2] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color };
+            self.vertices[vertex_count + 0] = .{ .position = .{ .x = left, .y = top }, .color = quad.color, .uv = Vector2.xy(0.0, 0.0) };
+            self.vertices[vertex_count + 1] = .{ .position = .{ .x = left, .y = bottom }, .color = quad.color, .uv = Vector2.xy(0.0, 1.0) };
+            self.vertices[vertex_count + 2] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color, .uv = Vector2.xy(1.0, 1.0) };
 
-            self.vertices[vertex_count + 3] = .{ .position = .{ .x = left, .y = top }, .color = quad.color };
-            self.vertices[vertex_count + 4] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color };
-            self.vertices[vertex_count + 5] = .{ .position = .{ .x = right, .y = top }, .color = quad.color };
+            self.vertices[vertex_count + 3] = .{ .position = .{ .x = left, .y = top }, .color = quad.color, .uv = Vector2.xy(0.0, 0.0) };
+            self.vertices[vertex_count + 4] = .{ .position = .{ .x = right, .y = bottom }, .color = quad.color, .uv = Vector2.xy(1.0, 1.0) };
+            self.vertices[vertex_count + 5] = .{ .position = .{ .x = right, .y = top }, .color = quad.color, .uv = Vector2.xy(1.0, 0.0) };
 
             vertex_count += vertices_per_quad;
         }
@@ -244,6 +248,11 @@ fn createQuadPipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat) !c.WGPU
             .format = c.WGPUVertexFormat_Float32x4,
             .offset = @offsetOf(Vertex, "color"),
             .shaderLocation = 1,
+        },
+        .{
+            .format = c.WGPUVertexFormat_Float32x2,
+            .offset = @offsetOf(Vertex, "uv"),
+            .shaderLocation = 2,
         },
     };
 
