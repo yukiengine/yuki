@@ -97,9 +97,9 @@ pub const Gpu = struct {
     }
 
     /// Clears and presents one frame
-    pub fn render(self: *Gpu, quads: []const render2d.Quad) !void {
+    pub fn render(self: *Gpu, frame: render2d.Frame) !void {
         self.renderer_2d.beginFrame();
-        for (quads) |quad| {
+        for (frame.quads) |quad| {
             self.renderer_2d.drawQuad(quad);
         }
 
@@ -146,12 +146,10 @@ pub const Gpu = struct {
         color_attachment.loadOp = c.WGPULoadOp_Clear;
         color_attachment.storeOp = c.WGPUStoreOp_Store;
         color_attachment.clearValue = .{
-            // .r = std.math.clamp(state.x / 500.0, 0.0, 1.0),
-            // .g = std.math.clamp(state.y / 500.0, 0.0, 1.0),
-            .r = 0.5,
-            .g = 0.5,
-            .b = 0.16,
-            .a = 1.0,
+            .r = @floatCast(frame.clear_color.r),
+            .g = @floatCast(frame.clear_color.g),
+            .b = @floatCast(frame.clear_color.b),
+            .a = @floatCast(frame.clear_color.a),
         };
 
         var pass_desc: c.WGPURenderPassDescriptor = std.mem.zeroes(c.WGPURenderPassDescriptor);

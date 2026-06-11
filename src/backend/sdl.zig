@@ -84,7 +84,7 @@ pub fn runHelloWindow() !void {
 
     var running = true;
     while (running) {
-        // Event poling
+        // Event polling
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -148,22 +148,22 @@ pub fn runHelloWindow() !void {
         const window_height: f32 = @floatFromInt(gpu.height);
 
         const quads = [_]render2d.Quad{
-            .{
-                .position = .{
-                    .x = window_width * 0.5 + game_state.x,
-                    .y = window_height * 0.5 + game_state.y,
-                },
-                .size = .{ .x = 96.0, .y = 96.0 },
-                .color = .{ .r = 1.0, .g = 0.0, .b = 0.0, .a = 1.0 },
-            },
-            .{
-                .position = .{ .x = 160.0, .y = 160.0 },
-                .size = .{ .x = 64.0, .y = 64.0 },
-                .color = .{ .r = 0.0, .g = 1.0, .b = 0.0, .a = 1.0 },
-            },
+            render2d.Quad.init(
+                render2d.Vec2.xy(window_width * 0.5 + game_state.x, window_height * 0.5 + game_state.y),
+                render2d.Vec2.xy(96.0, 96.0),
+                render2d.ColorRgba.rgb(1.0, 0.0, 0.0),
+            ),
+            render2d.Quad.init(
+                render2d.Vec2.xy(160.0, 160.0),
+                render2d.Vec2.xy(80.0, 80.0),
+                render2d.ColorRgba.rgb(0.0, 1.0, 0.0),
+            ),
         };
 
-        try gpu.render(quads[0..]);
+        try gpu.render(render2d.Frame.init(
+            render2d.ColorRgba.rgb(0.05, 0.06, 0.08),
+            quads[0..],
+        ));
 
         // Delay to run ~60FPS
         // TODO: Handle frame pacing with a proper frame limiter

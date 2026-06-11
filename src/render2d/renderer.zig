@@ -15,6 +15,10 @@ pub const Error = error{
 pub const Vec2 = extern struct {
     x: f32,
     y: f32,
+
+    pub fn xy(x: f32, y: f32) Vec2 {
+        return .{ .x = x, .y = y };
+    }
 };
 
 const Vertex = extern struct {
@@ -27,12 +31,40 @@ pub const ColorRgba = extern struct {
     g: f32,
     b: f32,
     a: f32,
+
+    pub fn rgba(r: f32, g: f32, b: f32, a: f32) ColorRgba {
+        return .{ .r = r, .g = g, .b = b, .a = a };
+    }
+
+    pub fn rgb(r: f32, g: f32, b: f32) ColorRgba {
+        return rgba(r, g, b, 1.0);
+    }
 };
 
 pub const Quad = struct {
     position: Vec2,
     size: Vec2,
     color: ColorRgba,
+
+    pub fn init(position: Vec2, size: Vec2, color: ColorRgba) Quad {
+        return .{
+            .position = position,
+            .size = size,
+            .color = color,
+        };
+    }
+};
+
+pub const Frame = struct {
+    clear_color: ColorRgba,
+    quads: []const Quad,
+
+    pub fn init(clear_color: ColorRgba, quads: []const Quad) Frame {
+        return .{
+            .clear_color = clear_color,
+            .quads = quads,
+        };
+    }
 };
 
 const quad_shader =
@@ -102,7 +134,7 @@ pub const Renderer2D = struct {
 
         c.wgpuQueueWriteBuffer(queue, self.vertex_buffer, 0, self.vertices[0..vertex_count].ptr, vertex_data_size);
         c.wgpuRenderPassEncoderSetPipeline(pass, self.pipeline);
-        c.wgpuRenderPassEncoderSetVertexBuffer(pass, 0, self.vertex_buffer, 0, self.vertices.len * @sizeOf(Vertex));
+        c.wgpuRenderPassEncoderSetVertexBuffer(pass, 0, self.vertex_buffer, 0, vertex_data_size);
         c.wgpuRenderPassEncoderDraw(pass, @intCast(vertex_count), 1, 0, 0);
     }
 
