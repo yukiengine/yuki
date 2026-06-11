@@ -149,7 +149,7 @@ pub fn runHelloWindow() !void {
             render2d.Quad.init(
                 render2d.Vector2.xy(game_state.x, game_state.y),
                 render2d.Vector2.xy(96.0, 96.0),
-                render2d.ColorRgba.rgb(1.0, 0.0, 0.0),
+                render2d.ColorRgba.rgb(1.0, 1.0, 1.0),
             ),
             render2d.Quad.init(
                 render2d.Vector2.xy(-180.0, -120.0),

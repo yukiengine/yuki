@@ -79,7 +79,7 @@ pub const Gpu = struct {
         config.presentMode = c.WGPUPresentMode_Fifo;
         c.wgpuSurfaceConfigure(surface, &config);
 
-        var renderer_2d = try render2d.Renderer2D.init(device, format);
+        var renderer_2d = try render2d.Renderer2D.init(device, queue, format);
         errdefer renderer_2d.deinit();
 
         return Gpu{

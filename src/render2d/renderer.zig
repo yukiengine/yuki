@@ -10,6 +10,11 @@ pub const Error = error{
     CreatePipelineLayoutFailed,
     CreateRenderPipelineFailed,
     CreateVertexBufferFailed,
+    CreateBindGroupLayoutFailed,
+    CreateTextureFailed,
+    CreateTextureViewFailed,
+    CreateSamplerFailed,
+    CreateBindGroupFailed,
 };
 
 pub const Vector2 = extern struct {
@@ -46,12 +51,22 @@ pub const Quad = struct {
     position: Vector2,
     size: Vector2,
     color: ColorRgba,
+    texture: TextureId = TextureId.default(),
 
     pub fn init(position: Vector2, size: Vector2, color: ColorRgba) Quad {
         return .{
             .position = position,
             .size = size,
             .color = color,
+        };
+    }
+
+    pub fn textured(position: Vector2, size: Vector2, color: ColorRgba, texture: TextureId) Quad {
+        return .{
+            .position = position,
+            .size = size,
+            .color = color,
+            .texture = texture,
         };
     }
 };
@@ -114,11 +129,36 @@ const quad_shader =
     \\    return output;
     \\}
     \\
+    \\@group(0) @binding(0) var quad_texture: texture_2d<f32>;
+    \\@group(0) @binding(1) var quad_sampler: sampler;
     \\@fragment
     \\fn fs_main(input: VertexOutput) -> @location(0) vec4f {
-    \\    return input.color;
+    \\    return textureSample(quad_texture, quad_sampler, input.uv) * input.color;
     \\}
 ;
+
+const Texture2D = struct {
+    texture: c.WGPUTexture,
+    view: c.WGPUTextureView,
+    bind_group: c.WGPUBindGroup,
+    width: u32,
+    height: u32,
+
+    fn deinit(self: *Texture2D) void {
+        c.wgpuBindGroupRelease(self.bind_group);
+        c.wgpuTextureViewRelease(self.view);
+        c.wgpuTextureRelease(self.texture);
+        self.* = undefined;
+    }
+};
+
+pub const TextureId = extern struct {
+    index: u32,
+
+    pub fn default() TextureId {
+        return .{ .index = 0 };
+    }
+};
 
 pub const Renderer2D = struct {
     pipeline: c.WGPURenderPipeline,
@@ -126,23 +166,47 @@ pub const Renderer2D = struct {
     quads: [max_quads]Quad,
     vertices: [max_vertices]Vertex,
     quad_count: usize,
-    pub fn init(device: c.WGPUDevice, format: c.WGPUTextureFormat) !Renderer2D {
+    texture_bind_group_layout: c.WGPUBindGroupLayout,
+    sampler: c.WGPUSampler,
+    default_texture: Texture2D,
+
+    pub fn init(device: c.WGPUDevice, queue: c.WGPUQueue, format: c.WGPUTextureFormat) !Renderer2D {
         const vertex_buffer = try createQuadVertexBuffer(device);
         errdefer c.wgpuBufferRelease(vertex_buffer);
 
-        const pipeline = try createQuadPipeline(device, format);
+        const texture_bind_group_layout = try createTextureBindGroupLayout(device);
+        errdefer c.wgpuBindGroupLayoutRelease(texture_bind_group_layout);
+
+        const sampler = try createSampler(device);
+        errdefer c.wgpuSamplerRelease(sampler);
+
+        var default_texture = try createCheckerTexture(
+            device,
+            queue,
+            texture_bind_group_layout,
+            sampler,
+        );
+        errdefer default_texture.deinit();
+
+        const pipeline = try createQuadPipeline(device, format, texture_bind_group_layout);
         errdefer c.wgpuRenderPipelineRelease(pipeline);
 
-        return Renderer2D{
+        return .{
             .pipeline = pipeline,
             .vertex_buffer = vertex_buffer,
             .quads = undefined,
             .vertices = undefined,
             .quad_count = 0,
+            .texture_bind_group_layout = texture_bind_group_layout,
+            .sampler = sampler,
+            .default_texture = default_texture,
         };
     }
 
     pub fn deinit(self: *Renderer2D) void {
+        self.default_texture.deinit();
+        c.wgpuSamplerRelease(self.sampler);
+        c.wgpuBindGroupLayoutRelease(self.texture_bind_group_layout);
         c.wgpuRenderPipelineRelease(self.pipeline);
         c.wgpuBufferRelease(self.vertex_buffer);
         self.* = undefined;
@@ -164,7 +228,13 @@ pub const Renderer2D = struct {
         c.wgpuQueueWriteBuffer(queue, self.vertex_buffer, 0, self.vertices[0..vertex_count].ptr, vertex_data_size);
         c.wgpuRenderPassEncoderSetPipeline(pass, self.pipeline);
         c.wgpuRenderPassEncoderSetVertexBuffer(pass, 0, self.vertex_buffer, 0, vertex_data_size);
-        c.wgpuRenderPassEncoderDraw(pass, @intCast(vertex_count), 1, 0, 0);
+
+        for (self.quads[0..self.quad_count], 0..) |quad, index| {
+            c.wgpuRenderPassEncoderSetBindGroup(pass, 0, self.textureBindGroup(quad.texture), 0, null);
+
+            const first_vertex: u32 = @intCast(index * vertices_per_quad);
+            c.wgpuRenderPassEncoderDraw(pass, vertices_per_quad, 1, first_vertex, 0);
+        }
     }
 
     pub fn beginFrame(self: *Renderer2D) void {
@@ -204,9 +274,14 @@ pub const Renderer2D = struct {
 
         return vertex_count;
     }
+
+    fn textureBindGroup(self: *const Renderer2D, texture: TextureId) c.WGPUBindGroup {
+        std.debug.assert(texture.index == 0);
+        return self.default_texture.bind_group;
+    }
 };
 
-fn createQuadPipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat) !c.WGPURenderPipeline {
+fn createQuadPipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat, texture_bind_group_layout: c.WGPUBindGroupLayout) !c.WGPURenderPipeline {
     var wgsl_source: c.WGPUShaderSourceWGSL = std.mem.zeroes(c.WGPUShaderSourceWGSL);
     wgsl_source.chain.sType = c.WGPUSType_ShaderSourceWGSL;
     wgsl_source.code = stringView(quad_shader);
@@ -222,6 +297,10 @@ fn createQuadPipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat) !c.WGPU
 
     var layout_desc: c.WGPUPipelineLayoutDescriptor = std.mem.zeroes(c.WGPUPipelineLayoutDescriptor);
     layout_desc.label = stringView("quad pipeline layout");
+
+    var bind_group_layouts = [_]c.WGPUBindGroupLayout{texture_bind_group_layout};
+    layout_desc.bindGroupLayoutCount = bind_group_layouts.len;
+    layout_desc.bindGroupLayouts = bind_group_layouts[0..].ptr;
 
     const layout = c.wgpuDeviceCreatePipelineLayout(device, &layout_desc) orelse {
         return Error.CreatePipelineLayoutFailed;
@@ -317,4 +396,172 @@ fn worldToClipY(y: f32, surface_height: u32, camera: Camera2D) f32 {
     const half_height = @as(f32, @floatFromInt(surface_height)) * 0.5;
     const screen_y = (y - camera.position.y) * camera.zoom + half_height;
     return screenToClipY(screen_y, surface_height);
+}
+
+fn createTextureBindGroupLayout(device: c.WGPUDevice) !c.WGPUBindGroupLayout {
+    var entries = [_]c.WGPUBindGroupLayoutEntry{
+        std.mem.zeroes(c.WGPUBindGroupLayoutEntry),
+        std.mem.zeroes(c.WGPUBindGroupLayoutEntry),
+    };
+
+    entries[0].binding = 0;
+    entries[0].visibility = c.WGPUShaderStage_Fragment;
+    entries[0].texture.sampleType = c.WGPUTextureSampleType_Float;
+    entries[0].texture.viewDimension = c.WGPUTextureViewDimension_2D;
+
+    entries[1].binding = 1;
+    entries[1].visibility = c.WGPUShaderStage_Fragment;
+    entries[1].sampler.type = c.WGPUSamplerBindingType_Filtering;
+
+    var desc: c.WGPUBindGroupLayoutDescriptor =
+        std.mem.zeroes(c.WGPUBindGroupLayoutDescriptor);
+    desc.label = stringView("quad texture bind group layout");
+    desc.entryCount = entries.len;
+    desc.entries = entries[0..].ptr;
+
+    return c.wgpuDeviceCreateBindGroupLayout(device, &desc) orelse
+        Error.CreateBindGroupLayoutFailed;
+}
+
+fn createTextureView(texture: c.WGPUTexture) !c.WGPUTextureView {
+    var desc: c.WGPUTextureViewDescriptor =
+        std.mem.zeroes(c.WGPUTextureViewDescriptor);
+    desc.label = stringView("default texture view");
+    desc.format = c.WGPUTextureFormat_RGBA8Unorm;
+    desc.dimension = c.WGPUTextureViewDimension_2D;
+    desc.baseMipLevel = 0;
+    desc.mipLevelCount = 1;
+    desc.baseArrayLayer = 0;
+    desc.arrayLayerCount = 1;
+    desc.aspect = c.WGPUTextureAspect_All;
+    desc.usage = c.WGPUTextureUsage_TextureBinding;
+
+    return c.wgpuTextureCreateView(texture, &desc) orelse
+        Error.CreateTextureViewFailed;
+}
+
+fn createSampler(device: c.WGPUDevice) !c.WGPUSampler {
+    var desc: c.WGPUSamplerDescriptor = std.mem.zeroes(c.WGPUSamplerDescriptor);
+    desc.label = stringView("quad sampler");
+    desc.addressModeU = c.WGPUAddressMode_ClampToEdge;
+    desc.addressModeV = c.WGPUAddressMode_ClampToEdge;
+    desc.addressModeW = c.WGPUAddressMode_ClampToEdge;
+    desc.magFilter = c.WGPUFilterMode_Nearest;
+    desc.minFilter = c.WGPUFilterMode_Nearest;
+    desc.mipmapFilter = c.WGPUMipmapFilterMode_Nearest;
+    desc.maxAnisotropy = 1;
+
+    return c.wgpuDeviceCreateSampler(device, &desc) orelse Error.CreateSamplerFailed;
+}
+
+fn createTextureBindGroup(
+    device: c.WGPUDevice,
+    layout: c.WGPUBindGroupLayout,
+    texture_view: c.WGPUTextureView,
+    sampler: c.WGPUSampler,
+) !c.WGPUBindGroup {
+    var entries = [_]c.WGPUBindGroupEntry{
+        std.mem.zeroes(c.WGPUBindGroupEntry),
+        std.mem.zeroes(c.WGPUBindGroupEntry),
+    };
+
+    entries[0].binding = 0;
+    entries[0].textureView = texture_view;
+
+    entries[1].binding = 1;
+    entries[1].sampler = sampler;
+
+    var desc: c.WGPUBindGroupDescriptor =
+        std.mem.zeroes(c.WGPUBindGroupDescriptor);
+    desc.label = stringView("quad texture bind group");
+    desc.layout = layout;
+    desc.entryCount = entries.len;
+    desc.entries = entries[0..].ptr;
+
+    return c.wgpuDeviceCreateBindGroup(device, &desc) orelse
+        Error.CreateBindGroupFailed;
+}
+
+fn createCheckerTexture(
+    device: c.WGPUDevice,
+    queue: c.WGPUQueue,
+    bind_group_layout: c.WGPUBindGroupLayout,
+    sampler: c.WGPUSampler,
+) !Texture2D {
+    const pixels = [_]u8{
+        255, 255, 255, 255, 32,  32,  32,  255,
+        32,  32,  32,  255, 255, 255, 255, 255,
+    };
+
+    return createTexture2DFromRgbaPixels(
+        device,
+        queue,
+        bind_group_layout,
+        sampler,
+        "checker texture",
+        2,
+        2,
+        pixels[0..],
+    );
+}
+
+fn createTexture2DFromRgbaPixels(
+    device: c.WGPUDevice,
+    queue: c.WGPUQueue,
+    bind_group_layout: c.WGPUBindGroupLayout,
+    sampler: c.WGPUSampler,
+    label: [:0]const u8,
+    width: u32,
+    height: u32,
+    pixels: []const u8,
+) !Texture2D {
+    const expected_size = @as(usize, @intCast(width)) * @as(usize, @intCast(height)) * 4;
+    std.debug.assert(pixels.len == expected_size);
+
+    var desc: c.WGPUTextureDescriptor = std.mem.zeroes(c.WGPUTextureDescriptor);
+    desc.label = stringView(label);
+    desc.usage = c.WGPUTextureUsage_TextureBinding | c.WGPUTextureUsage_CopyDst;
+    desc.dimension = c.WGPUTextureDimension_2D;
+    desc.size = .{ .width = width, .height = height, .depthOrArrayLayers = 1 };
+    desc.format = c.WGPUTextureFormat_RGBA8Unorm;
+    desc.mipLevelCount = 1;
+    desc.sampleCount = 1;
+
+    const texture = c.wgpuDeviceCreateTexture(device, &desc) orelse return Error.CreateTextureFailed;
+    errdefer c.wgpuTextureRelease(texture);
+
+    var dst: c.WGPUTexelCopyTextureInfo = .{
+        .texture = texture,
+        .mipLevel = 0,
+        .origin = .{ .x = 0, .y = 0, .z = 0 },
+        .aspect = c.WGPUTextureAspect_All,
+    };
+
+    var layout: c.WGPUTexelCopyBufferLayout = .{
+        .offset = 0,
+        .bytesPerRow = width * 4,
+        .rowsPerImage = height,
+    };
+
+    var size: c.WGPUExtent3D = .{
+        .width = width,
+        .height = height,
+        .depthOrArrayLayers = 1,
+    };
+
+    c.wgpuQueueWriteTexture(queue, &dst, pixels.ptr, pixels.len, &layout, &size);
+
+    const view = try createTextureView(texture);
+    errdefer c.wgpuTextureViewRelease(view);
+
+    const bind_group = try createTextureBindGroup(device, bind_group_layout, view, sampler);
+    errdefer c.wgpuBindGroupRelease(bind_group);
+
+    return .{
+        .texture = texture,
+        .view = view,
+        .bind_group = bind_group,
+        .width = width,
+        .height = height,
+    };
 }
