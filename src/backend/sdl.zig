@@ -41,19 +41,21 @@ pub fn runHelloWindow() !void {
     defer gpu.deinit();
 
     // BMP texture
-    const player_texture = try assets.loadBmpTexture(&gpu, "assets/player.bmp");
-    const player_atlas = player_texture.atlas();
-    const player_animation = render2d.SpriteAnimation.init(player_atlas, 0, 0, 2, 1, 1, 0.2);
+    var texture_catalog = assets.TextureCatalog.init();
+
+    const player_texture = try texture_catalog.loadBmp(&gpu, "player", "assets/player.bmp");
+
+    const player_animation = texture_catalog.animationGrid(player_texture, 0, 0, 2, 1, 1, 0.2);
 
     const debug_pixels = [_]u8{
-        255, 0, 255, 255, // pink
-        0, 255, 255, 255, // cyan
-        0, 255, 255, 255, // cyan
-        255, 0, 255, 255, // pink
+        255, 0,   255, 255,
+        0,   255, 255, 255,
+        0,   255, 255, 255,
+        255, 0,   255, 255,
     };
 
-    const debug_texture = try gpu.createTextureFromRgbaPixels("debug texture", 2, 2, debug_pixels[0..]);
-    const debug_atlas = render2d.TextureAtlas.init(debug_texture, 2, 2);
+    const debug_texture = try texture_catalog.createRgbaTexture(&gpu, "debug texture", 2, 2, debug_pixels[0..]);
+    const debug_atlas = texture_catalog.atlas(debug_texture);
 
     var clock = time.FrameClock.init();
     const limiter = time.FrameLimiter.fps(60);
