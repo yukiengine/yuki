@@ -4,6 +4,7 @@ const input = @import("input.zig");
 const tilemap = @import("tilemap.zig");
 const debug_draw = @import("debug_draw.zig");
 const world2d = @import("world2d.zig");
+const prefab2d = @import("prefab2d.zig");
 
 const layer_background: i32 = -20;
 const layer_tilemap: i32 = -10;
@@ -121,29 +122,45 @@ pub const Input = struct {
 
 pub const Demo = struct {
     actors: world2d.World,
+    prefabs: prefab2d.PrefabCatalog,
     player: world2d.ActorId,
     camera_zoom: f32 = 1.0,
-    debug_atlas: render2d.TextureAtlas,
     tile_storage: DemoTilemap,
     tile_rules: tilemap.TileRules,
     tileset: tilemap.Tileset,
     show_collision_debug: bool = false,
 
-    /// Creates the demo scene and its first actor.
+    /// Creates the demo scene, prefab catalog, and initial actors.
     pub fn init(player_animation: render2d.SpriteAnimation, debug_atlas: render2d.TextureAtlas) Demo {
         var actors = world2d.World.init();
+        var prefabs = prefab2d.PrefabCatalog.init();
 
-        const player = actors.spawn(.{
-            .position = render2d.Vector2.xy(0.0, 0.0),
+        const player_prefab = prefabs.add(.{
+            .name = "demo.player",
             .size = player_size,
             .animation = player_animation,
             .layer = layer_player,
         }) catch unreachable;
 
+        const marker_prefab = prefabs.add(.{
+            .name = "demo.marker",
+            .size = player_size,
+            .sprite = debug_atlas.spritePixels(0, 0, 1, 1),
+            .layer = layer_world,
+        }) catch unreachable;
+
+        const player = prefabs.spawn(player_prefab, &actors, .{
+            .position = render2d.Vector2.xy(0.0, 0.0),
+        }) catch unreachable;
+
+        _ = prefabs.spawn(marker_prefab, &actors, .{
+            .position = render2d.Vector2.xy(-180.0, -120.0),
+        }) catch unreachable;
+
         return .{
             .actors = actors,
+            .prefabs = prefabs,
             .player = player,
-            .debug_atlas = debug_atlas,
             .tile_storage = buildDemoMap(),
             .tile_rules = buildTileRules(),
             .tileset = tilemap.Tileset.init(debug_atlas, 1, 1),
@@ -227,13 +244,6 @@ pub const Demo = struct {
         );
 
         try self.actors.drawVisible(world, visible_world);
-
-        try world.drawSpriteLayer(
-            render2d.Vector2.xy(-180.0, -120.0),
-            player_size,
-            self.debug_atlas.spritePixels(0, 0, 1, 1),
-            layer_world,
-        );
 
         if (self.show_collision_debug) {
             try self.drawCollisionDebug(world, map, visible_world);
