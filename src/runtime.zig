@@ -100,14 +100,18 @@ pub const App = struct {
     }
 
     pub fn render(self: *App, gpu: *wgpu.Gpu) !void {
+        const camera = self.demo_state.camera();
+        const visible_world = camera.visibleWorldRect(gpu.width, gpu.height);
+
         try self.demo_state.draw(
             &self.world_draw_list,
             &self.screen_draw_list,
+            visible_world,
         );
 
         const frame = self.world_draw_list.sortedFrameWithScreen(
             self.config.clear_color,
-            self.demo_state.camera(),
+            camera,
             &self.screen_draw_list,
         );
 

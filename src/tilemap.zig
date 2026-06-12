@@ -70,6 +70,26 @@ pub const Tileset = struct {
     }
 };
 
+pub const TileRange = struct {
+    min_x: u32,
+    min_y: u32,
+    max_x: u32,
+    max_y: u32,
+
+    pub fn empty() TileRange {
+        return .{
+            .min_x = 0,
+            .min_y = 0,
+            .max_x = 0,
+            .max_y = 0,
+        };
+    }
+
+    pub fn isEmpty(self: TileRange) bool {
+        return self.min_x >= self.max_x or self.min_y >= self.max_y;
+    }
+};
+
 pub const Tilemap = struct {
     width: u32,
     height: u32,
@@ -167,6 +187,118 @@ pub const Tilemap = struct {
             origin.y + @as(f32, @floatFromInt(y)) * self.tile_size.y +
                 self.tile_size.y * 0.5,
         );
+    }
+
+    pub fn worldBounds(self: Tilemap, origin: render2d.Vector2) render2d.Rect2D {
+        return render2d.Rect2D.fromMinSize(
+            origin,
+            render2d.Vector2.xy(
+                @as(f32, @floatFromInt(self.width)) * self.tile_size.x,
+                @as(f32, @floatFromInt(self.height)) * self.tile_size.y,
+            ),
+        );
+    }
+
+    pub fn tileBounds(
+        self: Tilemap,
+        origin: render2d.Vector2,
+        x: u32,
+        y: u32,
+    ) render2d.Rect2D {
+        std.debug.assert(x < self.width);
+        std.debug.assert(y < self.height);
+
+        return render2d.Rect2D.fromMinSize(
+            render2d.Vector2.xy(
+                origin.x + @as(f32, @floatFromInt(x)) * self.tile_size.x,
+                origin.y + @as(f32, @floatFromInt(y)) * self.tile_size.y,
+            ),
+            self.tile_size,
+        );
+    }
+
+    pub fn visibleRange(
+        self: Tilemap,
+        origin: render2d.Vector2,
+        visible_world: render2d.Rect2D,
+    ) TileRange {
+        if (!self.worldBounds(origin).intersects(visible_world)) {
+            return TileRange.empty();
+        }
+
+        const min_x = floorTileIndex(
+            (visible_world.min.x - origin.x) / self.tile_size.x,
+            self.width,
+        );
+        const min_y = floorTileIndex(
+            (visible_world.min.y - origin.y) / self.tile_size.y,
+            self.height,
+        );
+        const max_x = ceilTileIndex(
+            (visible_world.max.x - origin.x) / self.tile_size.x,
+            self.width,
+        );
+        const max_y = ceilTileIndex(
+            (visible_world.max.y - origin.y) / self.tile_size.y,
+            self.height,
+        );
+
+        return .{
+            .min_x = min_x,
+            .min_y = min_y,
+            .max_x = max_x,
+            .max_y = max_y,
+        };
+    }
+
+    pub fn drawVisible(
+        self: Tilemap,
+        draw_list: *render2d.DrawList,
+        tileset: Tileset,
+        origin: render2d.Vector2,
+        visible_world: render2d.Rect2D,
+        layer: i32,
+    ) !void {
+        try self.drawVisibleTinted(
+            draw_list,
+            tileset,
+            origin,
+            visible_world,
+            render2d.ColorRgba.rgb(1.0, 1.0, 1.0),
+            layer,
+        );
+    }
+
+    pub fn drawVisibleTinted(
+        self: Tilemap,
+        draw_list: *render2d.DrawList,
+        tileset: Tileset,
+        origin: render2d.Vector2,
+        visible_world: render2d.Rect2D,
+        tint: render2d.ColorRgba,
+        layer: i32,
+    ) !void {
+        const range = self.visibleRange(origin, visible_world);
+        if (range.isEmpty()) return;
+
+        var y = range.min_y;
+        while (y < range.max_y) : (y += 1) {
+            var x = range.min_x;
+            while (x < range.max_x) : (x += 1) {
+                const tile = self.tileAt(x, y);
+                if (tile.isEmpty()) continue;
+
+                var sprite = tileset.sprite(tile);
+                sprite.tint = tint;
+
+                try draw_list.drawSpriteLayer(
+                    self.tileCenter(origin, x, y),
+                    self.tile_size,
+                    sprite,
+                    layer,
+                );
+            }
+        }
     }
 };
 
@@ -306,6 +438,24 @@ pub fn StaticTilemap(comptime map_width: u32, comptime map_height: u32) type {
     };
 }
 
+fn floorTileIndex(relative: f32, limit: u32) u32 {
+    if (relative <= 0.0) return 0;
+
+    const limit_float = @as(f32, @floatFromInt(limit));
+    if (relative >= limit_float) return limit;
+
+    return @intFromFloat(@floor(relative));
+}
+
+fn ceilTileIndex(relative: f32, limit: u32) u32 {
+    if (relative <= 0.0) return 0;
+
+    const limit_float = @as(f32, @floatFromInt(limit));
+    if (relative >= limit_float) return limit;
+
+    return @intFromFloat(@ceil(relative));
+}
+
 test "tile atlas index uses zero as empty" {
     const empty = Tile.empty();
     const first = Tile.fromAtlasIndex(0);
@@ -395,4 +545,49 @@ test "static tilemap creates a tilemap view" {
     try std.testing.expectEqual(@as(u32, 2), view.width);
     try std.testing.expectEqual(@as(u32, 2), view.height);
     try std.testing.expectEqual(@as(u32, 3), view.tileAt(1, 1).atlasIndex());
+}
+
+test "tilemap visible range clips to viewport" {
+    const tiles = [_]Tile{Tile.fromAtlasIndex(0)} ** 16;
+
+    const map = Tilemap.init(
+        4,
+        4,
+        render2d.Vector2.xy(16.0, 16.0),
+        tiles[0..],
+    );
+
+    const range = map.visibleRange(
+        render2d.Vector2.xy(0.0, 0.0),
+        render2d.Rect2D.fromMinMax(
+            render2d.Vector2.xy(8.0, 8.0),
+            render2d.Vector2.xy(40.0, 40.0),
+        ),
+    );
+
+    try std.testing.expectEqual(@as(u32, 0), range.min_x);
+    try std.testing.expectEqual(@as(u32, 0), range.min_y);
+    try std.testing.expectEqual(@as(u32, 3), range.max_x);
+    try std.testing.expectEqual(@as(u32, 3), range.max_y);
+}
+
+test "tilemap visible range is empty outside map" {
+    const tiles = [_]Tile{Tile.fromAtlasIndex(0)} ** 4;
+
+    const map = Tilemap.init(
+        2,
+        2,
+        render2d.Vector2.xy(16.0, 16.0),
+        tiles[0..],
+    );
+
+    const range = map.visibleRange(
+        render2d.Vector2.xy(0.0, 0.0),
+        render2d.Rect2D.fromMinMax(
+            render2d.Vector2.xy(100.0, 100.0),
+            render2d.Vector2.xy(120.0, 120.0),
+        ),
+    );
+
+    try std.testing.expect(range.isEmpty());
 }

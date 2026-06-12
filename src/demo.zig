@@ -142,13 +142,19 @@ pub const Demo = struct {
         return render2d.Camera2D.init(render2d.Vector2.xy(self.x, self.y), self.camera_zoom);
     }
 
-    pub fn draw(self: *const Demo, world: *render2d.DrawList, screen: *render2d.DrawList) !void {
+    pub fn draw(
+        self: *const Demo,
+        world: *render2d.DrawList,
+        screen: *render2d.DrawList,
+        visible_world: render2d.Rect2D,
+    ) !void {
         const map = self.tile_storage.view(render2d.Vector2.xy(48.0, 48.0));
 
-        try map.draw(
+        try map.drawVisible(
             world,
             self.tileset,
             render2d.Vector2.xy(-240.0, -192.0),
+            visible_world,
             layer_tilemap,
         );
 

@@ -6,7 +6,7 @@
 const std = @import("std");
 
 /// Maximum number of quads that can be submitted in one frame.
-pub const max_quads = 128;
+pub const max_quads = 1024;
 
 pub const DrawError = error{
     TooManyQuads,
@@ -19,6 +19,67 @@ pub const Vector2 = extern struct {
 
     pub fn xy(x: f32, y: f32) Vector2 {
         return .{ .x = x, .y = y };
+    }
+};
+
+/// Axis-aligned rectangle in 2D world or screen space.
+pub const Rect2D = struct {
+    min: Vector2,
+    max: Vector2,
+
+    pub fn fromMinMax(min: Vector2, max: Vector2) Rect2D {
+        std.debug.assert(max.x >= min.x);
+        std.debug.assert(max.y >= min.y);
+
+        return .{
+            .min = min,
+            .max = max,
+        };
+    }
+
+    pub fn fromMinSize(min: Vector2, size: Vector2) Rect2D {
+        std.debug.assert(size.x >= 0.0);
+        std.debug.assert(size.y >= 0.0);
+
+        return fromMinMax(
+            min,
+            Vector2.xy(min.x + size.x, min.y + size.y),
+        );
+    }
+
+    pub fn fromCenterSize(center: Vector2, size: Vector2) Rect2D {
+        std.debug.assert(size.x >= 0.0);
+        std.debug.assert(size.y >= 0.0);
+
+        const half_width = size.x * 0.5;
+        const half_height = size.y * 0.5;
+
+        return fromMinMax(
+            Vector2.xy(center.x - half_width, center.y - half_height),
+            Vector2.xy(center.x + half_width, center.y + half_height),
+        );
+    }
+
+    pub fn width(self: Rect2D) f32 {
+        return self.max.x - self.min.x;
+    }
+
+    pub fn height(self: Rect2D) f32 {
+        return self.max.y - self.min.y;
+    }
+
+    pub fn intersects(self: Rect2D, other: Rect2D) bool {
+        return self.min.x < other.max.x and
+            self.max.x > other.min.x and
+            self.min.y < other.max.y and
+            self.max.y > other.min.y;
+    }
+
+    pub fn containsPoint(self: Rect2D, point: Vector2) bool {
+        return point.x >= self.min.x and
+            point.x < self.max.x and
+            point.y >= self.min.y and
+            point.y < self.max.y;
     }
 };
 
@@ -166,6 +227,26 @@ pub const Camera2D = struct {
             .position = position,
             .zoom = zoom,
         };
+    }
+
+    pub fn visibleWorldRect(
+        self: Camera2D,
+        surface_width: u32,
+        surface_height: u32,
+    ) Rect2D {
+        std.debug.assert(surface_width > 0);
+        std.debug.assert(surface_height > 0);
+        std.debug.assert(self.zoom > 0.0);
+
+        const world_width =
+            @as(f32, @floatFromInt(surface_width)) / self.zoom;
+        const world_height =
+            @as(f32, @floatFromInt(surface_height)) / self.zoom;
+
+        return Rect2D.fromCenterSize(
+            self.position,
+            Vector2.xy(world_width, world_height),
+        );
     }
 };
 
