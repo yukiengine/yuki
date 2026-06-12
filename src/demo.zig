@@ -1,11 +1,33 @@
 const std = @import("std");
 const render2d = @import("render2d/renderer.zig");
 const input = @import("input.zig");
+const tilemap = @import("tilemap.zig");
 
-const layer_background: i32 = -10;
+const layer_background: i32 = -20;
+const layer_tilemap: i32 = -10;
 const layer_world: i32 = 0;
 const layer_player: i32 = 10;
 const layer_overlay: i32 = 100;
+
+const demo_map_width: u32 = 10;
+const demo_map_height: u32 = 8;
+
+const tile_empty = tilemap.Tile.empty();
+const tile_a = tilemap.Tile.fromAtlasIndex(0);
+const tile_b = tilemap.Tile.fromAtlasIndex(1);
+const tile_c = tilemap.Tile.fromAtlasIndex(2);
+const tile_d = tilemap.Tile.fromAtlasIndex(3);
+
+const demo_tiles = [_]tilemap.Tile{
+    tile_a, tile_a,     tile_a,     tile_a, tile_a,     tile_a,     tile_a, tile_a,     tile_a,     tile_a,
+    tile_a, tile_b,     tile_b,     tile_b, tile_empty, tile_empty, tile_c, tile_c,     tile_c,     tile_a,
+    tile_a, tile_b,     tile_d,     tile_b, tile_empty, tile_empty, tile_c, tile_d,     tile_c,     tile_a,
+    tile_a, tile_b,     tile_b,     tile_b, tile_b,     tile_c,     tile_c, tile_c,     tile_c,     tile_a,
+    tile_a, tile_empty, tile_empty, tile_b, tile_b,     tile_c,     tile_c, tile_empty, tile_empty, tile_a,
+    tile_a, tile_c,     tile_c,     tile_c, tile_empty, tile_empty, tile_b, tile_b,     tile_b,     tile_a,
+    tile_a, tile_c,     tile_d,     tile_c, tile_empty, tile_empty, tile_b, tile_d,     tile_b,     tile_a,
+    tile_a, tile_a,     tile_a,     tile_a, tile_a,     tile_a,     tile_a, tile_a,     tile_a,     tile_a,
+};
 
 pub const Controls = struct {
     pub const move_left = input.ActionId.fromIndex(0);
@@ -71,11 +93,20 @@ pub const Demo = struct {
     camera_zoom: f32 = 1.0,
     animation_player: render2d.AnimationPlayer,
     debug_atlas: render2d.TextureAtlas,
+    tilemap: tilemap.Tilemap,
+    tileset: tilemap.Tileset,
 
     pub fn init(player_animation: render2d.SpriteAnimation, debug_atlas: render2d.TextureAtlas) Demo {
         return .{
             .animation_player = render2d.AnimationPlayer.init(player_animation),
             .debug_atlas = debug_atlas,
+            .tilemap = tilemap.Tilemap.init(
+                demo_map_width,
+                demo_map_height,
+                render2d.Vector2.xy(48.0, 48.0),
+                demo_tiles[0..],
+            ),
+            .tileset = tilemap.Tileset.init(debug_atlas, 1, 1),
         };
     }
 
@@ -102,6 +133,13 @@ pub const Demo = struct {
     }
 
     pub fn draw(self: Demo, world: *render2d.DrawList, screen: *render2d.DrawList) !void {
+        try self.tilemap.draw(
+            world,
+            self.tileset,
+            render2d.Vector2.xy(-240.0, -192.0),
+            layer_tilemap,
+        );
+
         try world.drawRectLayer(
             render2d.Vector2.xy(0.0, 0.0),
             render2d.Vector2.xy(360.0, 220.0),
