@@ -11,6 +11,9 @@ const layer_overlay: i32 = 100;
 
 const demo_map_width: u32 = 10;
 const demo_map_height: u32 = 8;
+const demo_tile_size = render2d.Vector2.xy(48.0, 48.0);
+const demo_map_origin = render2d.Vector2.xy(-240.0, -192.0);
+const player_size = render2d.Vector2.xy(80.0, 80.0);
 
 const DemoTilemap = tilemap.StaticTilemap(demo_map_width, demo_map_height);
 
@@ -109,6 +112,7 @@ pub const Demo = struct {
     animation_player: render2d.AnimationPlayer,
     debug_atlas: render2d.TextureAtlas,
     tile_storage: DemoTilemap,
+    tile_rules: tilemap.TileRules,
     tileset: tilemap.Tileset,
 
     pub fn init(player_animation: render2d.SpriteAnimation, debug_atlas: render2d.TextureAtlas) Demo {
@@ -116,14 +120,29 @@ pub const Demo = struct {
             .animation_player = render2d.AnimationPlayer.init(player_animation),
             .debug_atlas = debug_atlas,
             .tile_storage = buildDemoMap(),
+            .tile_rules = buildTileRules(),
             .tileset = tilemap.Tileset.init(debug_atlas, 1, 1),
         };
     }
 
     pub fn update(self: *Demo, input_state: Input, dt_seconds: f32) void {
         const speed: f32 = 240.0;
-        self.x += @as(f32, @floatFromInt(input_state.move_x)) * speed * dt_seconds;
-        self.y += @as(f32, @floatFromInt(input_state.move_y)) * speed * dt_seconds;
+        const movement = render2d.Vector2.xy(
+            @as(f32, @floatFromInt(input_state.move_x)) * speed * dt_seconds,
+            @as(f32, @floatFromInt(input_state.move_y)) * speed * dt_seconds,
+        );
+
+        const map = self.tile_storage.view(demo_tile_size);
+        const moved = map.moveAabb(
+            self.tile_rules,
+            demo_map_origin,
+            render2d.Vector2.xy(self.x, self.y),
+            player_size,
+            movement,
+        );
+
+        self.x = moved.position.x;
+        self.y = moved.position.y;
 
         if (input_state.pause_animation_pressed) self.animation_player.toggle();
         if (input_state.reset_animation_pressed) self.animation_player.reset();
@@ -148,12 +167,12 @@ pub const Demo = struct {
         screen: *render2d.DrawList,
         visible_world: render2d.Rect2D,
     ) !void {
-        const map = self.tile_storage.view(render2d.Vector2.xy(48.0, 48.0));
+        const map = self.tile_storage.view(demo_tile_size);
 
         try map.drawVisible(
             world,
             self.tileset,
-            render2d.Vector2.xy(-240.0, -192.0),
+            demo_map_origin,
             visible_world,
             layer_tilemap,
         );
@@ -177,9 +196,18 @@ pub const Demo = struct {
         );
         try world.drawSpriteLayer(
             render2d.Vector2.xy(-180.0, -120.0),
-            render2d.Vector2.xy(80.0, 80.0),
+            player_size,
             self.debug_atlas.spritePixels(0, 0, 1, 1),
             layer_world,
         );
     }
 };
+
+fn buildTileRules() tilemap.TileRules {
+    var rules = tilemap.TileRules.init();
+
+    rules.setSolid(tile_a, true);
+    rules.setSolid(tile_d, true);
+
+    return rules;
+}

@@ -70,6 +70,46 @@ pub const Tileset = struct {
     }
 };
 
+pub const max_tile_rules = 256;
+
+pub const TileFlags = struct {
+    solid: bool = false,
+};
+
+pub const TileRules = struct {
+    flags: [max_tile_rules]TileFlags,
+
+    pub fn init() TileRules {
+        return .{
+            .flags = [_]TileFlags{.{}} ** max_tile_rules,
+        };
+    }
+
+    pub fn setSolid(self: *TileRules, tile: Tile, solid: bool) void {
+        std.debug.assert(!tile.isEmpty());
+
+        self.flags[tileRuleIndex(tile)].solid = solid;
+    }
+
+    pub fn isSolid(self: TileRules, tile: Tile) bool {
+        if (tile.isEmpty()) return false;
+
+        return self.flags[tileRuleIndex(tile)].solid;
+    }
+};
+
+pub const TileHit = struct {
+    x: u32,
+    y: u32,
+    tile: Tile,
+};
+
+pub const MoveResult = struct {
+    position: render2d.Vector2,
+    blocked_x: bool = false,
+    blocked_y: bool = false,
+};
+
 pub const TileRange = struct {
     min_x: u32,
     min_y: u32,
@@ -300,6 +340,147 @@ pub const Tilemap = struct {
             }
         }
     }
+
+    pub fn firstSolidInRect(
+        self: Tilemap,
+        rules: TileRules,
+        origin: render2d.Vector2,
+        rect: render2d.Rect2D,
+        x_forward: bool,
+        y_forward: bool,
+    ) ?TileHit {
+        const range = self.visibleRange(origin, rect);
+        if (range.isEmpty()) return null;
+
+        const x_count = range.max_x - range.min_x;
+        const y_count = range.max_y - range.min_y;
+
+        var y_offset: u32 = 0;
+        while (y_offset < y_count) : (y_offset += 1) {
+            const y = orderedRangeValue(
+                range.min_y,
+                range.max_y,
+                y_offset,
+                y_forward,
+            );
+
+            var x_offset: u32 = 0;
+            while (x_offset < x_count) : (x_offset += 1) {
+                const x = orderedRangeValue(
+                    range.min_x,
+                    range.max_x,
+                    x_offset,
+                    x_forward,
+                );
+
+                const tile = self.tileAt(x, y);
+                if (!rules.isSolid(tile)) continue;
+
+                return .{
+                    .x = x,
+                    .y = y,
+                    .tile = tile,
+                };
+            }
+        }
+
+        return null;
+    }
+
+    pub fn intersectsSolid(
+        self: Tilemap,
+        rules: TileRules,
+        origin: render2d.Vector2,
+        rect: render2d.Rect2D,
+    ) bool {
+        return self.firstSolidInRect(
+            rules,
+            origin,
+            rect,
+            true,
+            true,
+        ) != null;
+    }
+
+    pub fn moveAabb(
+        self: Tilemap,
+        rules: TileRules,
+        origin: render2d.Vector2,
+        position: render2d.Vector2,
+        size: render2d.Vector2,
+        delta: render2d.Vector2,
+    ) MoveResult {
+        std.debug.assert(size.x > 0.0);
+        std.debug.assert(size.y > 0.0);
+
+        const half_size = render2d.Vector2.xy(size.x * 0.5, size.y * 0.5);
+
+        var result = MoveResult{
+            .position = position,
+        };
+
+        if (delta.x != 0.0) {
+            var next_position = result.position;
+            next_position.x += delta.x;
+
+            const next_rect = render2d.Rect2D.fromCenterSize(
+                next_position,
+                size,
+            );
+
+            if (self.firstSolidInRect(
+                rules,
+                origin,
+                next_rect,
+                delta.x > 0.0,
+                true,
+            )) |hit| {
+                const bounds = self.tileBounds(origin, hit.x, hit.y);
+
+                if (delta.x > 0.0) {
+                    next_position.x = bounds.min.x - half_size.x;
+                } else {
+                    next_position.x = bounds.max.x + half_size.x;
+                }
+
+                result.blocked_x = true;
+            }
+
+            result.position.x = next_position.x;
+        }
+
+        if (delta.y != 0.0) {
+            var next_position = result.position;
+            next_position.y += delta.y;
+
+            const next_rect = render2d.Rect2D.fromCenterSize(
+                next_position,
+                size,
+            );
+
+            if (self.firstSolidInRect(
+                rules,
+                origin,
+                next_rect,
+                true,
+                delta.y > 0.0,
+            )) |hit| {
+                const bounds = self.tileBounds(origin, hit.x, hit.y);
+
+                if (delta.y > 0.0) {
+                    next_position.y = bounds.min.y - half_size.y;
+                } else {
+                    next_position.y = bounds.max.y + half_size.y;
+                }
+
+                result.blocked_y = true;
+            }
+
+            result.position.y = next_position.y;
+        }
+
+        return result;
+    }
 };
 
 pub fn StaticTilemap(comptime map_width: u32, comptime map_height: u32) type {
@@ -436,6 +617,25 @@ pub fn StaticTilemap(comptime map_width: u32, comptime map_height: u32) type {
             return @as(usize, y) * @as(usize, map_width) + @as(usize, x);
         }
     };
+}
+
+fn tileRuleIndex(tile: Tile) usize {
+    std.debug.assert(!tile.isEmpty());
+
+    const index: usize = @intCast(tile.atlasIndex());
+    std.debug.assert(index < max_tile_rules);
+
+    return index;
+}
+
+fn orderedRangeValue(min: u32, max: u32, offset: u32, forward: bool) u32 {
+    std.debug.assert(min < max);
+    std.debug.assert(offset < max - min);
+
+    return if (forward)
+        min + offset
+    else
+        max - 1 - offset;
 }
 
 fn floorTileIndex(relative: f32, limit: u32) u32 {
@@ -590,4 +790,118 @@ test "tilemap visible range is empty outside map" {
     );
 
     try std.testing.expect(range.isEmpty());
+}
+
+test "tile rules mark selected tiles solid" {
+    const floor = Tile.fromAtlasIndex(0);
+    const wall = Tile.fromAtlasIndex(1);
+
+    var rules = TileRules.init();
+    rules.setSolid(wall, true);
+
+    try std.testing.expect(!rules.isSolid(Tile.empty()));
+    try std.testing.expect(!rules.isSolid(floor));
+    try std.testing.expect(rules.isSolid(wall));
+}
+
+test "tilemap detects solid tiles in world rect" {
+    const floor = Tile.fromAtlasIndex(0);
+    const wall = Tile.fromAtlasIndex(1);
+
+    const tiles = [_]Tile{
+        floor, floor,
+        floor, wall,
+    };
+
+    const map = Tilemap.init(
+        2,
+        2,
+        render2d.Vector2.xy(16.0, 16.0),
+        tiles[0..],
+    );
+
+    var rules = TileRules.init();
+    rules.setSolid(wall, true);
+
+    try std.testing.expect(map.intersectsSolid(
+        rules,
+        render2d.Vector2.xy(0.0, 0.0),
+        render2d.Rect2D.fromMinSize(
+            render2d.Vector2.xy(18.0, 18.0),
+            render2d.Vector2.xy(4.0, 4.0),
+        ),
+    ));
+
+    try std.testing.expect(!map.intersectsSolid(
+        rules,
+        render2d.Vector2.xy(0.0, 0.0),
+        render2d.Rect2D.fromMinSize(
+            render2d.Vector2.xy(2.0, 2.0),
+            render2d.Vector2.xy(4.0, 4.0),
+        ),
+    ));
+}
+
+test "tilemap horizontal movement stops at solid tile" {
+    const floor = Tile.fromAtlasIndex(0);
+    const wall = Tile.fromAtlasIndex(1);
+
+    const tiles = [_]Tile{
+        floor, wall,
+        floor, wall,
+    };
+
+    const map = Tilemap.init(
+        2,
+        2,
+        render2d.Vector2.xy(16.0, 16.0),
+        tiles[0..],
+    );
+
+    var rules = TileRules.init();
+    rules.setSolid(wall, true);
+
+    const moved = map.moveAabb(
+        rules,
+        render2d.Vector2.xy(0.0, 0.0),
+        render2d.Vector2.xy(6.0, 8.0),
+        render2d.Vector2.xy(8.0, 8.0),
+        render2d.Vector2.xy(20.0, 0.0),
+    );
+
+    try std.testing.expect(moved.blocked_x);
+    try std.testing.expectEqual(@as(f32, 12.0), moved.position.x);
+    try std.testing.expectEqual(@as(f32, 8.0), moved.position.y);
+}
+
+test "tilemap vertical movement stops at solid tile" {
+    const floor = Tile.fromAtlasIndex(0);
+    const wall = Tile.fromAtlasIndex(1);
+
+    const tiles = [_]Tile{
+        floor, floor,
+        wall,  wall,
+    };
+
+    const map = Tilemap.init(
+        2,
+        2,
+        render2d.Vector2.xy(16.0, 16.0),
+        tiles[0..],
+    );
+
+    var rules = TileRules.init();
+    rules.setSolid(wall, true);
+
+    const moved = map.moveAabb(
+        rules,
+        render2d.Vector2.xy(0.0, 0.0),
+        render2d.Vector2.xy(8.0, 6.0),
+        render2d.Vector2.xy(8.0, 8.0),
+        render2d.Vector2.xy(0.0, 20.0),
+    );
+
+    try std.testing.expect(moved.blocked_y);
+    try std.testing.expectEqual(@as(f32, 8.0), moved.position.x);
+    try std.testing.expectEqual(@as(f32, 12.0), moved.position.y);
 }
