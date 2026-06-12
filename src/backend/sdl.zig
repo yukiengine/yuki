@@ -5,6 +5,7 @@ const render2d = @import("../render2d/renderer.zig");
 const assets = @import("../assets.zig");
 const demo = @import("../demo.zig");
 const input = @import("../input.zig");
+const time = @import("../time.zig");
 
 pub const Error = error{
     InitFailed,
@@ -12,27 +13,6 @@ pub const Error = error{
     CreateRendererFailed,
     RenderFailed,
     GetWindowSizeFailed,
-};
-
-/// Delta time
-const FrameClock = struct {
-    last_counter: u64,
-    frequency: u64,
-
-    pub fn init() FrameClock {
-        return .{
-            .last_counter = c.SDL_GetPerformanceCounter(),
-            .frequency = c.SDL_GetPerformanceFrequency(),
-        };
-    }
-
-    pub fn tick(self: *FrameClock) f64 {
-        const now = c.SDL_GetPerformanceCounter();
-        const delta = now - self.last_counter;
-        self.last_counter = now;
-
-        return @as(f64, @floatFromInt(delta)) / @as(f64, @floatFromInt(self.frequency));
-    }
 };
 
 pub fn runHelloWindow() !void {
@@ -75,8 +55,9 @@ pub fn runHelloWindow() !void {
     const debug_texture = try gpu.createTextureFromRgbaPixels("debug texture", 2, 2, debug_pixels[0..]);
     const debug_atlas = render2d.TextureAtlas.init(debug_texture, 2, 2);
 
-    var clock = FrameClock.init();
-    var frame_index: u64 = 0;
+    var clock = time.FrameClock.init();
+    const limiter = time.FrameLimiter.fps(60);
+    var fps_counter = time.FpsCounter.init(time.Duration.fromSeconds(1.0));
 
     var input_state = input.State.init();
     var demo_state = demo.Demo.init(player_animation, debug_atlas);
@@ -150,14 +131,14 @@ pub fn runHelloWindow() !void {
         }
 
         // Delta time calculations
-        const dt = clock.tick();
-        frame_index += 1;
+        const frame = clock.tick();
+        const dt_seconds = frame.delta.seconds32();
 
-        const dt_seconds: f32 = @floatCast(dt);
-
-        // Logging every 120 FPS
-        if (frame_index % 120 == 0) {
-            std.log.info("frame dt: {d:.4}s", .{dt});
+        if (fps_counter.update(frame.delta)) {
+            std.log.info(
+                "fps: {d:.1}, frame: {d:.3}ms",
+                .{ fps_counter.fps(), fps_counter.averageFrameTime().milliseconds() },
+            );
         }
 
         const frame_input = demo.Input.fromState(&input_state);
@@ -176,7 +157,6 @@ pub fn runHelloWindow() !void {
         ));
 
         // Delay to run ~60FPS
-        // TODO: Handle frame pacing with a proper frame limiter
-        c.SDL_Delay(16);
+        limiter.wait(frame.started_at_ns);
     }
 }
