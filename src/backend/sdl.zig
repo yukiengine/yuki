@@ -8,7 +8,17 @@ const layer_world: i32 = 0;
 const layer_player: i32 = 10;
 const layer_overlay: i32 = 100;
 
-pub const Error = error{ InitFailed, CreateWindowFailed, CreateRendererFailed, RenderFailed, GetWindowSizeFailed };
+pub const Error = error{
+    InitFailed,
+    CreateWindowFailed,
+    CreateRendererFailed,
+    RenderFailed,
+    GetWindowSizeFailed,
+    LoadBmpFailed,
+    ConvertSurfaceFailed,
+    InvalidSurfacePixels,
+    UnsupportedSurfacePitch,
+};
 
 const GameState = struct {
     x: f32 = 0.0,
@@ -88,6 +98,11 @@ pub fn runHelloWindow() !void {
     var gpu = try wgpu.Gpu.init(@ptrCast(window), @intCast(width), @intCast(height));
     defer gpu.deinit();
 
+    // BMP texture
+    const player_texture = try loadBmpTexture(&gpu, "assets/player.bmp");
+    const player_atlas = render2d.TextureAtlas.init(player_texture, 2, 2);
+    const player_animation = render2d.SpriteAnimation.init(player_atlas, 0, 0, 2, 1, 1, 0.2);
+
     const debug_pixels = [_]u8{
         255, 0, 255, 255, // pink
         0, 255, 255, 255, // cyan
@@ -97,14 +112,13 @@ pub fn runHelloWindow() !void {
 
     const debug_texture = try gpu.createTextureFromRgbaPixels("debug texture", 2, 2, debug_pixels[0..]);
     const debug_atlas = render2d.TextureAtlas.init(debug_texture, 2, 2);
-    const debug_animation = render2d.SpriteAnimation.init(debug_atlas, 0, 0, 2, 1, 1, 0.2);
 
     var clock = FrameClock.init();
     var frame_index: u64 = 0;
 
     var input = Input{};
     var game_state = GameState{
-        .animation_player = render2d.AnimationPlayer.init(debug_animation),
+        .animation_player = render2d.AnimationPlayer.init(player_animation),
     };
 
     var world_draw_list = render2d.DrawList.init();
@@ -269,4 +283,31 @@ pub fn runHelloWindow() !void {
         // TODO: Handle frame pacing with a proper frame limiter
         c.SDL_Delay(16);
     }
+}
+
+fn loadBmpTexture(gpu: *wgpu.Gpu, path: [:0]const u8) !render2d.TextureId {
+    const source = c.SDL_LoadBMP(path.ptr) orelse {
+        std.log.err("SDL_LoadBMP failed: {s}", .{c.SDL_GetError()});
+        return Error.LoadBmpFailed;
+    };
+    defer c.SDL_DestroySurface(source);
+
+    const rgba = c.SDL_ConvertSurface(source, c.SDL_PIXELFORMAT_RGBA32) orelse {
+        std.log.err("SDL_ConvertSurface failed: {s}", .{c.SDL_GetError()});
+        return Error.ConvertSurfaceFailed;
+    };
+    defer c.SDL_DestroySurface(rgba);
+
+    const width: u32 = @intCast(rgba.*.w);
+    const height: u32 = @intCast(rgba.*.h);
+    const pitch: usize = @intCast(rgba.*.pitch);
+    const expected_pitch = @as(usize, @intCast(width)) * 4;
+
+    if (pitch != expected_pitch) return Error.UnsupportedSurfacePitch;
+
+    const pixels_raw = rgba.*.pixels orelse return Error.InvalidSurfacePixels;
+    const pixels_ptr: [*]const u8 = @ptrCast(pixels_raw);
+    const pixels = pixels_ptr[0 .. pitch * @as(usize, @intCast(height))];
+
+    return gpu.createTextureFromRgbaPixels(path, width, height, pixels);
 }
