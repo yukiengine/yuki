@@ -51,7 +51,22 @@ pub fn build(b: *std.Build) void {
 
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
+    const all_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+
+    all_tests.root_module.link_libc = true;
+    all_tests.root_module.linkSystemLibrary("SDL3", .{ .use_pkg_config = .force });
+    all_tests.root_module.linkSystemLibrary("wgpu_native", .{ .use_pkg_config = .force });
+
+    const run_all_tests = b.addRunArtifact(all_tests);
+    test_step.dependOn(&run_all_tests.step);
 }

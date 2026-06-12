@@ -37,6 +37,8 @@ const debug_solid_outline_color = render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.90);
 const debug_player_color = render2d.ColorRgba.rgba(0.1, 1.0, 0.3, 0.95);
 const debug_marker_color = render2d.ColorRgba.rgba(0.2, 0.7, 1.0, 0.95);
 
+const marker_push_speed: f32 = 96.0;
+
 fn buildDemoMap() DemoTilemap {
     var map = DemoTilemap.filled(tile_empty);
 
@@ -157,7 +159,7 @@ pub const Demo = struct {
         }) catch unreachable;
 
         _ = scene.spawn(marker_prefab, .{
-            .position = render2d.Vector2.xy(-96.0, -0.0),
+            .position = render2d.Vector2.xy(-96.0, 0.0),
         }) catch unreachable;
 
         return .{
@@ -202,6 +204,8 @@ pub const Demo = struct {
         self.scene.updateAnimations(dt_seconds);
 
         _ = self.scene.emitActorOverlaps(self.player, tag_marker) catch unreachable;
+        self.handleSceneEvents(dt_seconds);
+        self.scene.applyCommands();
 
         const zoom_speed: f32 = 1.5;
         if (input_state.zoom_in) self.camera_zoom += zoom_speed * dt_seconds;
@@ -333,6 +337,26 @@ pub const Demo = struct {
             16.0,
             debug_player_color,
         );
+    }
+
+    /// Converts scene events into deferred demo commands.
+    fn handleSceneEvents(self: *Demo, dt_seconds: f32) void {
+        for (self.scene.eventItems()) |event| {
+            switch (event.kind) {
+                .actor_overlap => {
+                    const overlap = event.actor_overlap;
+
+                    if (!overlap.other_tag.eql(tag_marker)) continue;
+
+                    const push = render2d.Vector2.xy(
+                        marker_push_speed * dt_seconds,
+                        0.0,
+                    );
+
+                    self.scene.queueMoveActor(overlap.other, push) catch unreachable;
+                },
+            }
+        }
     }
 };
 

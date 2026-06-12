@@ -4,6 +4,13 @@ const tilemap = @import("tilemap.zig");
 const world2d = @import("world2d.zig");
 const prefab2d = @import("prefab2d.zig");
 const events2d = @import("events2d.zig");
+const commands2d = @import("commands2d.zig");
+
+/// Public 2D scene command.
+pub const Command = commands2d.Command;
+
+/// Public 2D scene command queue.
+pub const CommandQueue = commands2d.CommandQueue;
 
 /// Public actor tag used for scene queries.
 pub const ActorTag = world2d.ActorTag;
@@ -42,13 +49,14 @@ pub const Event = events2d.Event;
 pub const EventQueue = events2d.EventQueue;
 
 /// Scene-level errors.
-pub const Error = prefab2d.Error || events2d.Error;
+pub const Error = prefab2d.Error || events2d.Error || commands2d.Error;
 
 /// High-level 2D scene made of prefabs and actors.
 pub const Scene = struct {
     world: world2d.World,
     prefabs: prefab2d.PrefabCatalog,
     events: EventQueue,
+    commands: CommandQueue,
 
     /// Creates an empty 2D scene.
     pub fn init() Scene {
@@ -56,6 +64,7 @@ pub const Scene = struct {
             .world = world2d.World.init(),
             .prefabs = prefab2d.PrefabCatalog.init(),
             .events = EventQueue.init(),
+            .commands = CommandQueue.init(),
         };
     }
 
@@ -294,7 +303,7 @@ pub const Scene = struct {
     ) !bool {
         const hit = self.firstActorOverlappingActor(actor_id, target_tag) orelse return false;
 
-        try self.emitActorOverlap(actor, hit);
+        try self.emitActorOverlap(actor_id, hit);
         return true;
     }
 
@@ -320,6 +329,76 @@ pub const Scene = struct {
         }
 
         return result.items().len;
+    }
+
+    /// Clears deferred scene commands.
+    pub fn clearCommands(self: *Scene) void {
+        self.commands.clear();
+    }
+
+    /// Returns queued deferred scene commands.
+    pub fn commandItems(self: *const Scene) []const Command {
+        return self.commands.items();
+    }
+
+    /// Queues an actor despawn.
+    pub fn queueDespawnActor(self: *Scene, actor_id: ActorId) !void {
+        try self.commands.despawnActor(actor_id);
+    }
+
+    /// Queues an actor movement without collision.
+    pub fn queueMoveActor(
+        self: *Scene,
+        actor_id: ActorId,
+        delta: render2d.Vector2,
+    ) !void {
+        try self.commands.moveActor(actor_id, delta);
+    }
+
+    /// Queues an actor position replacement.
+    pub fn queueSetActorPosition(
+        self: *Scene,
+        actor_id: ActorId,
+        position: render2d.Vector2,
+    ) !void {
+        try self.commands.setActorPosition(actor_id, position);
+    }
+
+    /// Queues an actor velocity replacement.
+    pub fn queueSetActorVelocity(
+        self: *Scene,
+        actor_id: ActorId,
+        velocity: render2d.Vector2,
+    ) !void {
+        try self.commands.setActorVelocity(actor_id, velocity);
+    }
+
+    /// Applies queued scene commands and clears the command queue.
+    pub fn applyCommands(self: *Scene) void {
+        for (self.commands.items()) |command| {
+            switch (command) {
+                .despawn_actor => |actor_id| {
+                    self.despawn(actor_id);
+                },
+                .move_actor => |move| {
+                    if (self.actor(move.actor)) |actor_data| {
+                        actor_data.moveBy(move.delta);
+                    }
+                },
+                .set_actor_position => |set| {
+                    if (self.actor(set.actor)) |actor_data| {
+                        actor_data.position = set.position;
+                    }
+                },
+                .set_actor_velocity => |set| {
+                    if (self.actor(set.actor)) |actor_data| {
+                        actor_data.velocity = set.velocity;
+                    }
+                },
+            }
+        }
+
+        self.clearCommands();
     }
 };
 
@@ -739,4 +818,62 @@ test "scene clears frame events" {
     scene.clearEvents();
 
     try std.testing.expectEqual(@as(usize, 0), scene.eventItems().len);
+}
+
+test "scene applies queued movement command" {
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "command.actor",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+    });
+
+    const actor_id = try scene.spawn(prefab_id, .{
+        .position = render2d.Vector2.xy(10.0, 20.0),
+    });
+
+    try scene.queueMoveActor(actor_id, render2d.Vector2.xy(5.0, -3.0));
+    scene.applyCommands();
+
+    const actor_data = scene.actorConst(actor_id).?;
+
+    try std.testing.expectEqual(@as(f32, 15.0), actor_data.position.x);
+    try std.testing.expectEqual(@as(f32, 17.0), actor_data.position.y);
+    try std.testing.expectEqual(@as(usize, 0), scene.commandItems().len);
+}
+
+test "scene applies queued velocity command" {
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "velocity.actor",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+    });
+
+    const actor_id = try scene.spawn(prefab_id, .{});
+
+    try scene.queueSetActorVelocity(actor_id, render2d.Vector2.xy(12.0, -6.0));
+    scene.applyCommands();
+
+    const actor_data = scene.actorConst(actor_id).?;
+
+    try std.testing.expectEqual(@as(f32, 12.0), actor_data.velocity.x);
+    try std.testing.expectEqual(@as(f32, -6.0), actor_data.velocity.y);
+}
+
+test "scene applies queued despawn command" {
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "despawn.actor",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+    });
+
+    const actor_id = try scene.spawn(prefab_id, .{});
+
+    try scene.queueDespawnActor(actor_id);
+    scene.applyCommands();
+
+    try std.testing.expect(scene.actorConst(actor_id) == null);
+    try std.testing.expectEqual(@as(usize, 0), scene.commandItems().len);
 }
