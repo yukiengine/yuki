@@ -4,6 +4,9 @@ const tilemap = @import("tilemap.zig");
 const world2d = @import("world2d.zig");
 const prefab2d = @import("prefab2d.zig");
 
+/// Public actor tag used for scene queries.
+pub const ActorTag = world2d.ActorTag;
+
 /// Public actor handle used by 2D scenes.
 pub const ActorId = world2d.ActorId;
 
@@ -176,6 +179,36 @@ pub const Scene = struct {
 
             self.world.despawn(id);
         }
+    }
+
+    /// Sets the tag for a live actor.
+    pub fn setActorTag(self: *Scene, id: ActorId, tag: ActorTag) void {
+        self.world.setActorTag(id, tag);
+    }
+
+    /// Finds the first live actor with a tag.
+    pub fn findFirstByTag(self: *const Scene, tag: ActorTag) ?ActorId {
+        return self.world.findFirstByTag(tag);
+    }
+
+    /// Counts live actors with a tag.
+    pub fn countByTag(self: *const Scene, tag: ActorTag) usize {
+        return self.world.countByTag(tag);
+    }
+
+    /// Despawns all live actors with a tag.
+    pub fn despawnByTag(self: *Scene, tag: ActorTag) usize {
+        return self.world.despawnByTag(tag);
+    }
+
+    /// Draws visible live actors that have a tag.
+    pub fn drawVisibleByTag(
+        self: *const Scene,
+        draw_list: *render2d.DrawList,
+        visible_world: render2d.Rect2D,
+        tag: ActorTag,
+    ) !void {
+        try self.world.drawVisibleByTag(draw_list, visible_world, tag);
     }
 };
 
@@ -359,4 +392,50 @@ test "scene clear invalidates handles before slot reuse" {
     try std.testing.expect(first.generation != second.generation);
     try std.testing.expect(scene.actor(first) == null);
     try std.testing.expect(scene.actor(second) != null);
+}
+
+test "scene queries actors by tag" {
+    const player_tag = ActorTag.fromIndex(1);
+    const marker_tag = ActorTag.fromIndex(2);
+
+    var scene = Scene.init();
+
+    const player_prefab = try scene.registerPrefab(.{
+        .name = "player",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = player_tag,
+    });
+
+    const marker_prefab = try scene.registerPrefab(.{
+        .name = "marker",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = marker_tag,
+    });
+
+    const player = try scene.spawn(player_prefab, .{});
+    _ = try scene.spawn(marker_prefab, .{});
+    _ = try scene.spawn(marker_prefab, .{});
+
+    try std.testing.expectEqual(player.index, scene.findFirstByTag(player_tag).?.index);
+    try std.testing.expectEqual(@as(usize, 1), scene.countByTag(player_tag));
+    try std.testing.expectEqual(@as(usize, 2), scene.countByTag(marker_tag));
+}
+
+test "scene despawns actors by tag" {
+    const enemy_tag = ActorTag.fromIndex(10);
+
+    var scene = Scene.init();
+
+    const enemy_prefab = try scene.registerPrefab(.{
+        .name = "enemy",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = enemy_tag,
+    });
+
+    const first = try scene.spawn(enemy_prefab, .{});
+    const second = try scene.spawn(enemy_prefab, .{});
+
+    try std.testing.expectEqual(@as(usize, 2), scene.despawnByTag(enemy_tag));
+    try std.testing.expect(scene.actor(first) == null);
+    try std.testing.expect(scene.actor(second) == null);
 }

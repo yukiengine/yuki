@@ -5,6 +5,9 @@ const world2d = @import("world2d.zig");
 /// Maximum number of actor prefabs stored in one catalog.
 pub const max_prefabs = 64;
 
+/// Public actor tag type used by prefabs.
+pub const ActorTag = world2d.ActorTag;
+
 /// Errors returned by the prefab catalog.
 pub const Error = world2d.Error || error{
     PrefabCatalogFull,
@@ -40,6 +43,7 @@ pub const SpawnOverride = struct {
     animation: ?render2d.SpriteAnimation = null,
     rotation_radians: ?f32 = null,
     layer: ?i32 = null,
+    tag: ?ActorTag = null,
 };
 
 /// Reusable actor template used to spawn actors into a world.
@@ -50,6 +54,7 @@ pub const ActorPrefab = struct {
     animation: ?render2d.SpriteAnimation = null,
     rotation_radians: f32 = 0.0,
     layer: i32 = 0,
+    tag: ActorTag = ActorTag.none(),
 
     /// Builds a plain actor spawn descriptor from this prefab.
     pub fn actorDesc(self: ActorPrefab, spawn_override: SpawnOverride) world2d.ActorDesc {
@@ -57,9 +62,9 @@ pub const ActorPrefab = struct {
         const size = spawn_override.size orelse self.size;
         const sprite = spawn_override.sprite orelse self.sprite;
         const animation = spawn_override.animation orelse self.animation;
-        const rotation_radians = spawn_override.rotation_radians orelse
-            self.rotation_radians;
+        const rotation_radians = spawn_override.rotation_radians orelse self.rotation_radians;
         const layer = spawn_override.layer orelse self.layer;
+        const tag = spawn_override.tag orelse self.tag;
 
         std.debug.assert(size.x > 0.0);
         std.debug.assert(size.y > 0.0);
@@ -71,6 +76,7 @@ pub const ActorPrefab = struct {
             .animation = animation,
             .rotation_radians = rotation_radians,
             .layer = layer,
+            .tag = tag,
         };
     }
 
@@ -260,4 +266,27 @@ test "catalog reports full capacity" {
             .size = render2d.Vector2.xy(1.0, 1.0),
         }),
     );
+}
+
+test "prefab spawn applies tag override" {
+    const default_tag = ActorTag.fromIndex(1);
+    const override_tag = ActorTag.fromIndex(2);
+
+    var catalog = PrefabCatalog.init();
+    var world = world2d.World.init();
+
+    const id = try catalog.add(.{
+        .name = "tagged.actor",
+        .size = render2d.Vector2.xy(10.0, 10.0),
+        .tag = default_tag,
+    });
+
+    const actor_id = try catalog.spawn(id, &world, .{
+        .tag = override_tag,
+    });
+
+    const actor = world.get(actor_id).?;
+
+    try std.testing.expect(actor.hasTag(override_tag));
+    try std.testing.expect(!actor.hasTag(default_tag));
 }

@@ -20,6 +20,9 @@ const demo_map_origin = render2d.Vector2.xy(-240.0, -192.0);
 const player_size = render2d.Vector2.xy(80.0, 80.0);
 const player_speed: f32 = 240.0;
 
+const tag_player = scene2d.ActorTag.fromIndex(1);
+const tag_marker = scene2d.ActorTag.fromIndex(2);
+
 const DemoTilemap = tilemap.StaticTilemap(demo_map_width, demo_map_height);
 
 const tile_empty = tilemap.Tile.empty();
@@ -137,6 +140,7 @@ pub const Demo = struct {
             .size = player_size,
             .animation = player_animation,
             .layer = layer_player,
+            .tag = tag_player,
         }) catch unreachable;
 
         const marker_prefab = scene.registerPrefab(.{
@@ -144,6 +148,7 @@ pub const Demo = struct {
             .size = player_size,
             .sprite = debug_atlas.spritePixels(0, 0, 1, 1),
             .layer = layer_world,
+            .tag = tag_marker,
         }) catch unreachable;
 
         const player = scene.spawn(player_prefab, .{
@@ -253,6 +258,9 @@ pub const Demo = struct {
         map: tilemap.Tilemap,
         visible_world: render2d.Rect2D,
     ) !void {
+        const player_id = self.scene.findFirstByTag(tag_player) orelse return;
+        const player = self.scene.actorConst(player_id) orelse return;
+
         const debug = debug_draw.DebugDraw
             .init(world, layer_debug)
             .withThickness(2.0);
@@ -278,8 +286,6 @@ pub const Demo = struct {
                 }
             }
         }
-
-        const player = self.scene.actorConst(self.player) orelse return;
 
         try debug.rectOutline(
             player.bounds(),

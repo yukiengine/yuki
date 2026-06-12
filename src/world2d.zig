@@ -29,6 +29,32 @@ pub const ActorId = extern struct {
     }
 };
 
+/// Lightweight category value used to query actors.
+pub const ActorTag = extern struct {
+    index: u16,
+
+    /// Returns the empty tag used for untagged actors.
+    pub fn none() ActorTag {
+        return .{ .index = 0 };
+    }
+
+    /// Creates a non-empty actor tag.
+    pub fn fromIndex(index: u16) ActorTag {
+        std.debug.assert(index != 0);
+        return .{ .index = index };
+    }
+
+    /// Returns true when this is the empty tag.
+    pub fn isNone(self: ActorTag) bool {
+        return self.index == 0;
+    }
+
+    /// Returns true when two tags are identical.
+    pub fn eql(self: ActorTag, other: ActorTag) bool {
+        return self.index == other.index;
+    }
+};
+
 /// Data used when spawning an actor.
 pub const ActorDesc = struct {
     position: render2d.Vector2 = .{ .x = 0.0, .y = 0.0 },
@@ -37,6 +63,7 @@ pub const ActorDesc = struct {
     animation: ?render2d.SpriteAnimation = null,
     rotation_radians: f32 = 0.0,
     layer: i32 = 0,
+    tag: ActorTag = ActorTag.none(),
 };
 
 /// Basic renderable 2D object.
@@ -52,6 +79,8 @@ pub const Actor = struct {
 
     static_sprite: render2d.Sprite = .{},
     animation_player: ?render2d.AnimationPlayer = null,
+
+    tag: ActorTag = ActorTag.none(),
 
     /// Returns an inactive actor slot.
     pub fn empty() Actor {
@@ -151,6 +180,16 @@ pub const Actor = struct {
             player.toggle();
         }
     }
+
+    /// Returns true when the actor has this tag.
+    pub fn hasTag(self: *const Actor, tag: ActorTag) bool {
+        return self.tag.eql(tag);
+    }
+
+    /// Replaces the actor tag.
+    pub fn setTag(self: *Actor, tag: ActorTag) void {
+        self.tag = tag;
+    }
 };
 
 /// Fixed-capacity 2D actor container.
@@ -185,6 +224,7 @@ pub const World = struct {
         actor.static_sprite = desc.sprite;
         actor.rotation_radians = desc.rotation_radians;
         actor.layer = desc.layer;
+        actor.tag = desc.tag;
 
         if (desc.animation) |animation| {
             actor.animation_player = render2d.AnimationPlayer.init(animation);
@@ -296,6 +336,95 @@ pub const World = struct {
 
         return Error.ActorTableFull;
     }
+
+    /// Sets the tag for a live actor.
+    pub fn setActorTag(self: *World, id: ActorId, tag: ActorTag) void {
+        const actor = self.get(id) orelse unreachable;
+        actor.setTag(tag);
+    }
+
+    /// Finds the first live actor with a tag.
+    pub fn findFirstByTag(self: *const World, tag: ActorTag) ?ActorId {
+        std.debug.assert(!tag.isNone());
+
+        var index: usize = 0;
+        while (index < max_actors) : (index += 1) {
+            const actor = self.actors[index];
+            if (!actor.active) continue;
+            if (!actor.hasTag(tag)) continue;
+
+            return self.idForIndex(index);
+        }
+
+        return null;
+    }
+
+    /// Counts live actors with a tag.
+    pub fn countByTag(self: *const World, tag: ActorTag) usize {
+        std.debug.assert(!tag.isNone());
+
+        var count: usize = 0;
+        var index: usize = 0;
+
+        while (index < max_actors) : (index += 1) {
+            const actor = self.actors[index];
+            if (!actor.active) continue;
+            if (!actor.hasTag(tag)) continue;
+
+            count += 1;
+        }
+
+        return count;
+    }
+
+    /// Despawns every live actor with a tag.
+    pub fn despawnByTag(self: *World, tag: ActorTag) usize {
+        std.debug.assert(!tag.isNone());
+
+        var removed: usize = 0;
+        var index: usize = 0;
+
+        while (index < max_actors) : (index += 1) {
+            const actor = self.actors[index];
+            if (!actor.active) continue;
+            if (!actor.hasTag(tag)) continue;
+
+            self.despawn(self.idForIndex(index));
+            removed += 1;
+        }
+
+        return removed;
+    }
+
+    /// Draws visible live actors that have a tag.
+    pub fn drawVisibleByTag(
+        self: *const World,
+        draw_list: *render2d.DrawList,
+        visible_world: render2d.Rect2D,
+        tag: ActorTag,
+    ) !void {
+        std.debug.assert(!tag.isNone());
+
+        var index: usize = 0;
+        while (index < max_actors) : (index += 1) {
+            const actor = &self.actors[index];
+            if (!actor.active) continue;
+            if (!actor.hasTag(tag)) continue;
+            if (!actor.bounds().intersects(visible_world)) continue;
+
+            try actor.draw(draw_list);
+        }
+    }
+
+    /// Returns the current handle for a live actor slot.
+    fn idForIndex(self: *const World, index: usize) ActorId {
+        std.debug.assert(index < max_actors);
+
+        return .{
+            .index = @intCast(index),
+            .generation = self.actors[index].generation,
+        };
+    }
 };
 
 /// Returns the next non-zero handle generation.
@@ -364,4 +493,58 @@ test "actor tile movement stops at solid tile" {
     try std.testing.expect(result.blocked_x);
     try std.testing.expectEqual(@as(f32, 12.0), actor.position.x);
     try std.testing.expectEqual(@as(f32, 8.0), actor.position.y);
+}
+
+test "world finds and counts actors by tag" {
+    const player_tag = ActorTag.fromIndex(1);
+    const marker_tag = ActorTag.fromIndex(2);
+
+    var world = World.init();
+
+    const player = try world.spawn(.{
+        .position = render2d.Vector2.xy(1.0, 2.0),
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = player_tag,
+    });
+
+    _ = try world.spawn(.{
+        .position = render2d.Vector2.xy(3.0, 4.0),
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = marker_tag,
+    });
+
+    _ = try world.spawn(.{
+        .position = render2d.Vector2.xy(5.0, 6.0),
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = marker_tag,
+    });
+
+    try std.testing.expectEqual(player.index, world.findFirstByTag(player_tag).?.index);
+    try std.testing.expectEqual(@as(usize, 1), world.countByTag(player_tag));
+    try std.testing.expectEqual(@as(usize, 2), world.countByTag(marker_tag));
+}
+
+test "world despawns actors by tag" {
+    const pickup_tag = ActorTag.fromIndex(3);
+
+    var world = World.init();
+
+    const first = try world.spawn(.{
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = pickup_tag,
+    });
+
+    const second = try world.spawn(.{
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = pickup_tag,
+    });
+
+    const other = try world.spawn(.{
+        .size = render2d.Vector2.xy(8.0, 8.0),
+    });
+
+    try std.testing.expectEqual(@as(usize, 2), world.despawnByTag(pickup_tag));
+    try std.testing.expect(world.get(first) == null);
+    try std.testing.expect(world.get(second) == null);
+    try std.testing.expect(world.get(other) != null);
 }
