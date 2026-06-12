@@ -413,4 +413,8 @@ pub const AnimationPlayer = struct {
     pub fn reset(self: *AnimationPlayer) void {
         self.elapsed_seconds = 0.0;
     }
+
+    pub fn toggle(self: *AnimationPlayer) void {
+        self.playing = !self.playing;
+    }
 };

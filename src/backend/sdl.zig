@@ -47,6 +47,8 @@ const Input = struct {
     down: bool = false,
     zoom_in: bool = false,
     zoom_out: bool = false,
+    pause_animation_pressed: bool = false,
+    reset_animation_pressed: bool = false,
 
     fn boolToI32(value: bool) i32 {
         return if (value) 1 else 0;
@@ -133,6 +135,12 @@ pub fn runHelloWindow() !void {
                         c.SDLK_ESCAPE => if (pressed) {
                             running = false;
                         },
+                        c.SDLK_SPACE => if (pressed and !event.key.repeat) {
+                            input.pause_animation_pressed = true;
+                        },
+                        c.SDLK_R => if (pressed and !event.key.repeat) {
+                            input.reset_animation_pressed = true;
+                        },
                         c.SDLK_A, c.SDLK_LEFT => input.left = pressed,
                         c.SDLK_D, c.SDLK_RIGHT => input.right = pressed,
                         c.SDLK_W, c.SDLK_UP => input.up = pressed,
@@ -172,6 +180,15 @@ pub fn runHelloWindow() !void {
         }
 
         // Animations
+        if (input.pause_animation_pressed) {
+            game_state.animation_player.toggle();
+            input.pause_animation_pressed = false;
+        }
+
+        if (input.reset_animation_pressed) {
+            game_state.animation_player.reset();
+            input.reset_animation_pressed = false;
+        }
         game_state.animation_player.update(dt_seconds);
 
         // Rotation
