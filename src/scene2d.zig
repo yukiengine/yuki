@@ -3,6 +3,7 @@ const render2d = @import("render2d/renderer.zig");
 const tilemap = @import("tilemap.zig");
 const world2d = @import("world2d.zig");
 const prefab2d = @import("prefab2d.zig");
+const events2d = @import("events2d.zig");
 
 /// Public actor tag used for scene queries.
 pub const ActorTag = world2d.ActorTag;
@@ -31,19 +32,30 @@ pub const ActorQuery = world2d.ActorQuery;
 /// Public bounded result storage for actor overlap queries.
 pub const ActorQueryResult = world2d.ActorQueryResult;
 
+/// Public 2D scene event kind.
+pub const EventKind = events2d.EventKind;
+
+/// Public 2D scene event.
+pub const Event = events2d.Event;
+
+/// Public 2D scene event queue.
+pub const EventQueue = events2d.EventQueue;
+
 /// Scene-level errors.
-pub const Error = prefab2d.Error;
+pub const Error = prefab2d.Error || events2d.Error;
 
 /// High-level 2D scene made of prefabs and actors.
 pub const Scene = struct {
     world: world2d.World,
     prefabs: prefab2d.PrefabCatalog,
+    events: EventQueue,
 
     /// Creates an empty 2D scene.
     pub fn init() Scene {
         return .{
             .world = world2d.World.init(),
             .prefabs = prefab2d.PrefabCatalog.init(),
+            .events = EventQueue.init(),
         };
     }
 
@@ -246,6 +258,68 @@ pub const Scene = struct {
         tag: ActorTag,
     ) ?ActorHit {
         return self.world.firstActorOverlappingActor(id, tag);
+    }
+
+    /// Clears frame-local scene events.
+    pub fn clearEvents(self: *Scene) void {
+        self.events.clear();
+    }
+
+    /// Returns queued frame-local scene events.
+    pub fn eventItems(self: *const Scene) []const Event {
+        return self.events.items();
+    }
+
+    /// Emits one actor-overlap event.
+    pub fn emitActorOverlap(
+        self: *Scene,
+        actor_id: ActorId,
+        other: ActorHit,
+    ) !void {
+        const actor_data = self.actorConst(actor_id) orelse unreachable;
+
+        try self.events.pushActorOverlap(
+            actor_id,
+            actor_data.tag,
+            other.id,
+            other.tag,
+        );
+    }
+
+    /// Emits the first overlap event for one actor and target tag.
+    pub fn emitFirstActorOverlap(
+        self: *Scene,
+        actor_id: ActorId,
+        target_tag: ActorTag,
+    ) !bool {
+        const hit = self.firstActorOverlappingActor(actor_id, target_tag) orelse return false;
+
+        try self.emitActorOverlap(actor, hit);
+        return true;
+    }
+
+    /// Emits overlap events for all actors intersecting one actor.
+    pub fn emitActorOverlaps(
+        self: *Scene,
+        actor_id: ActorId,
+        target_tag: ActorTag,
+    ) !usize {
+        const actor_data = self.actorConst(actor_id) orelse unreachable;
+
+        var result = ActorQueryResult.init();
+        try self.collectActorsInRect(
+            ActorQuery
+                .all(actor_data.bounds())
+                .withTag(target_tag)
+                .withoutActor(actor_id),
+            &result,
+        );
+
+        for (result.items()) |hit| {
+            try self.emitActorOverlap(actor_id, hit);
+        }
+
+        return result.items().len;
     }
 };
 
@@ -567,4 +641,102 @@ test "scene detects actor overlap by tag" {
     const hit = scene.firstActorOverlappingActor(player, enemy_tag).?;
 
     try std.testing.expectEqual(enemy.index, hit.id.index);
+}
+
+test "scene emits first actor overlap event" {
+    const player_tag = ActorTag.fromIndex(30);
+    const pickup_tag = ActorTag.fromIndex(31);
+
+    var scene = Scene.init();
+
+    const player_prefab = try scene.registerPrefab(.{
+        .name = "player",
+        .size = render2d.Vector2.xy(16.0, 16.0),
+        .tag = player_tag,
+    });
+
+    const pickup_prefab = try scene.registerPrefab(.{
+        .name = "pickup",
+        .size = render2d.Vector2.xy(16.0, 16.0),
+        .tag = pickup_tag,
+    });
+
+    const player = try scene.spawn(player_prefab, .{
+        .position = render2d.Vector2.xy(0.0, 0.0),
+    });
+
+    const pickup = try scene.spawn(pickup_prefab, .{
+        .position = render2d.Vector2.xy(4.0, 0.0),
+    });
+
+    try std.testing.expect(try scene.emitFirstActorOverlap(player, pickup_tag));
+    try std.testing.expectEqual(@as(usize, 1), scene.eventItems().len);
+
+    const event = scene.eventItems()[0];
+
+    try std.testing.expect(event.actor_overlap.actor.eql(player));
+    try std.testing.expect(event.actor_overlap.other.eql(pickup));
+    try std.testing.expect(event.actor_overlap.actor_tag.eql(player_tag));
+    try std.testing.expect(event.actor_overlap.other_tag.eql(pickup_tag));
+}
+
+test "scene emits all actor overlap events" {
+    const player_tag = ActorTag.fromIndex(32);
+    const marker_tag = ActorTag.fromIndex(33);
+
+    var scene = Scene.init();
+
+    const player_prefab = try scene.registerPrefab(.{
+        .name = "player",
+        .size = render2d.Vector2.xy(16.0, 16.0),
+        .tag = player_tag,
+    });
+
+    const marker_prefab = try scene.registerPrefab(.{
+        .name = "marker",
+        .size = render2d.Vector2.xy(16.0, 16.0),
+        .tag = marker_tag,
+    });
+
+    const player = try scene.spawn(player_prefab, .{});
+
+    _ = try scene.spawn(marker_prefab, .{
+        .position = render2d.Vector2.xy(4.0, 0.0),
+    });
+
+    _ = try scene.spawn(marker_prefab, .{
+        .position = render2d.Vector2.xy(-4.0, 0.0),
+    });
+
+    const emitted = try scene.emitActorOverlaps(player, marker_tag);
+
+    try std.testing.expectEqual(@as(usize, 2), emitted);
+    try std.testing.expectEqual(@as(usize, 2), scene.eventItems().len);
+}
+
+test "scene clears frame events" {
+    const player_tag = ActorTag.fromIndex(34);
+    const marker_tag = ActorTag.fromIndex(35);
+
+    var scene = Scene.init();
+
+    const player_prefab = try scene.registerPrefab(.{
+        .name = "player",
+        .size = render2d.Vector2.xy(16.0, 16.0),
+        .tag = player_tag,
+    });
+
+    const marker_prefab = try scene.registerPrefab(.{
+        .name = "marker",
+        .size = render2d.Vector2.xy(16.0, 16.0),
+        .tag = marker_tag,
+    });
+
+    const player = try scene.spawn(player_prefab, .{});
+    _ = try scene.spawn(marker_prefab, .{});
+
+    _ = try scene.emitActorOverlaps(player, marker_tag);
+    scene.clearEvents();
+
+    try std.testing.expectEqual(@as(usize, 0), scene.eventItems().len);
 }

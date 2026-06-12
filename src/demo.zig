@@ -157,7 +157,7 @@ pub const Demo = struct {
         }) catch unreachable;
 
         _ = scene.spawn(marker_prefab, .{
-            .position = render2d.Vector2.xy(-180.0, -120.0),
+            .position = render2d.Vector2.xy(-96.0, -0.0),
         }) catch unreachable;
 
         return .{
@@ -171,6 +171,8 @@ pub const Demo = struct {
 
     /// Advances demo simulation for one frame.
     pub fn update(self: *Demo, input_state: Input, dt_seconds: f32) void {
+        self.scene.clearEvents();
+
         if (input_state.toggle_debug_pressed) {
             self.show_collision_debug = !self.show_collision_debug;
         }
@@ -198,6 +200,8 @@ pub const Demo = struct {
         }
 
         self.scene.updateAnimations(dt_seconds);
+
+        _ = self.scene.emitActorOverlaps(self.player, tag_marker) catch unreachable;
 
         const zoom_speed: f32 = 1.5;
         if (input_state.zoom_in) self.camera_zoom += zoom_speed * dt_seconds;
@@ -302,6 +306,21 @@ pub const Demo = struct {
                 hit.bounds,
                 debug_marker_color,
             );
+        }
+
+        for (self.scene.eventItems()) |event| {
+            switch (event.kind) {
+                .actor_overlap => {
+                    const other = self.scene.actorConst(event.actor_overlap.other) orelse
+                        continue;
+
+                    try debug.cross(
+                        other.position,
+                        24.0,
+                        debug_marker_color,
+                    );
+                },
+            }
         }
 
         try debug.rectOutline(
