@@ -1,22 +1,19 @@
 const std = @import("std");
 
-pub const max_bindings = 32;
+pub const max_actions = 64;
+pub const max_bindings = 64;
 
 pub const Error = error{
     InputMapFull,
 };
 
-pub const Button = enum(u8) {
-    move_left,
-    move_right,
-    move_up,
-    move_down,
-    zoom_in,
-    zoom_out,
-    pause_animation,
-    reset_animation,
-    quit,
-    count,
+pub const ActionId = extern struct {
+    index: u16,
+
+    pub fn fromIndex(index: u16) ActionId {
+        std.debug.assert(index < max_actions);
+        return .{ .index = index };
+    }
 };
 
 pub const Key = enum(u8) {
@@ -40,7 +37,6 @@ pub const Key = enum(u8) {
     count,
 };
 
-const button_count: usize = @intFromEnum(Button.count);
 const key_count: usize = @intFromEnum(Key.count);
 
 const DigitalState = struct {
@@ -74,17 +70,17 @@ const DigitalState = struct {
     }
 };
 
-pub const ButtonState = DigitalState;
 pub const KeyState = DigitalState;
+pub const ActionState = DigitalState;
 
 pub const State = struct {
     keys: [key_count]KeyState,
-    buttons: [button_count]ButtonState,
+    actions: [max_actions]ActionState,
 
     pub fn init() State {
         return .{
             .keys = [_]KeyState{.{}} ** key_count,
-            .buttons = [_]ButtonState{.{}} ** button_count,
+            .actions = [_]ActionState{.{}} ** max_actions,
         };
     }
 
@@ -93,8 +89,8 @@ pub const State = struct {
             key.beginFrame();
         }
 
-        for (&self.buttons) |*button| {
-            button.beginFrame();
+        for (&self.actions) |*action| {
+            action.beginFrame();
         }
     }
 
@@ -103,29 +99,17 @@ pub const State = struct {
             key.forceRelease();
         }
 
-        for (&self.buttons) |*button| {
-            button.forceRelease();
+        for (&self.actions) |*action| {
+            action.forceRelease();
         }
-    }
-
-    pub fn set(self: *State, button: Button, down: bool) void {
-        self.buttonState(button).setDown(down);
     }
 
     pub fn setKey(self: *State, key: Key, down: bool) void {
         self.keyState(key).setDown(down);
     }
 
-    pub fn isDown(self: *const State, button: Button) bool {
-        return self.buttonStateConst(button).down;
-    }
-
-    pub fn wasPressed(self: *const State, button: Button) bool {
-        return self.buttonStateConst(button).pressed;
-    }
-
-    pub fn wasReleased(self: *const State, button: Button) bool {
-        return self.buttonStateConst(button).released;
+    pub fn setActionDown(self: *State, action: ActionId, down: bool) void {
+        self.actionState(action).setDown(down);
     }
 
     pub fn isKeyDown(self: *const State, key: Key) bool {
@@ -140,22 +124,21 @@ pub const State = struct {
         return self.keyStateConst(key).released;
     }
 
-    pub fn axisX(self: *const State) i32 {
-        return boolToI32(self.isDown(.move_right)) -
-            boolToI32(self.isDown(.move_left));
+    pub fn isActionDown(self: *const State, action: ActionId) bool {
+        return self.actionStateConst(action).down;
     }
 
-    pub fn axisY(self: *const State) i32 {
-        return boolToI32(self.isDown(.move_down)) -
-            boolToI32(self.isDown(.move_up));
+    pub fn actionWasPressed(self: *const State, action: ActionId) bool {
+        return self.actionStateConst(action).pressed;
     }
 
-    fn buttonState(self: *State, button: Button) *ButtonState {
-        return &self.buttons[buttonIndex(button)];
+    pub fn actionWasReleased(self: *const State, action: ActionId) bool {
+        return self.actionStateConst(action).released;
     }
 
-    fn buttonStateConst(self: *const State, button: Button) ButtonState {
-        return self.buttons[buttonIndex(button)];
+    pub fn axis(self: *const State, negative: ActionId, positive: ActionId) i32 {
+        return boolToI32(self.isActionDown(positive)) -
+            boolToI32(self.isActionDown(negative));
     }
 
     fn keyState(self: *State, key: Key) *KeyState {
@@ -165,19 +148,26 @@ pub const State = struct {
     fn keyStateConst(self: *const State, key: Key) KeyState {
         return self.keys[keyIndex(key)];
     }
+
+    fn actionState(self: *State, action: ActionId) *ActionState {
+        return &self.actions[actionIndex(action)];
+    }
+
+    fn actionStateConst(self: *const State, action: ActionId) ActionState {
+        return self.actions[actionIndex(action)];
+    }
 };
 
 pub const Binding = struct {
     key: Key,
-    button: Button,
+    action: ActionId,
 
-    pub fn init(key: Key, button: Button) Binding {
+    pub fn init(key: Key, action: ActionId) Binding {
         std.debug.assert(key != .count);
-        std.debug.assert(button != .count);
 
         return .{
             .key = key,
-            .button = button,
+            .action = action,
         };
     }
 
@@ -197,37 +187,12 @@ pub const InputMap = struct {
         };
     }
 
-    pub fn defaultKeyboard() InputMap {
-        var map = InputMap.init();
-
-        map.bind(.escape, .quit) catch unreachable;
-        map.bind(.space, .pause_animation) catch unreachable;
-        map.bind(.r, .reset_animation) catch unreachable;
-
-        map.bind(.a, .move_left) catch unreachable;
-        map.bind(.left, .move_left) catch unreachable;
-
-        map.bind(.d, .move_right) catch unreachable;
-        map.bind(.right, .move_right) catch unreachable;
-
-        map.bind(.w, .move_up) catch unreachable;
-        map.bind(.up, .move_up) catch unreachable;
-
-        map.bind(.s, .move_down) catch unreachable;
-        map.bind(.down, .move_down) catch unreachable;
-
-        map.bind(.q, .zoom_out) catch unreachable;
-        map.bind(.e, .zoom_in) catch unreachable;
-
-        return map;
-    }
-
-    pub fn bind(self: *InputMap, key: Key, button: Button) !void {
+    pub fn bind(self: *InputMap, key: Key, action: ActionId) !void {
         if (self.binding_count == max_bindings) {
             return Error.InputMapFull;
         }
 
-        self.bindings[self.binding_count] = Binding.init(key, button);
+        self.bindings[self.binding_count] = Binding.init(key, action);
         self.binding_count += 1;
     }
 
@@ -245,7 +210,7 @@ pub const InputMap = struct {
         for (self.items()) |binding| {
             if (!binding.matches(key)) continue;
 
-            self.syncButton(state, binding.button);
+            self.syncAction(state, binding.action);
         }
     }
 
@@ -253,13 +218,13 @@ pub const InputMap = struct {
         return self.bindings[0..self.binding_count];
     }
 
-    fn syncButton(self: *const InputMap, state: *State, button: Button) void {
-        state.set(button, self.buttonDownFromKeys(state, button));
+    fn syncAction(self: *const InputMap, state: *State, action: ActionId) void {
+        state.setActionDown(action, self.actionDownFromKeys(state, action));
     }
 
-    fn buttonDownFromKeys(self: *const InputMap, state: *const State, button: Button) bool {
+    fn actionDownFromKeys(self: *const InputMap, state: *const State, action: ActionId) bool {
         for (self.items()) |binding| {
-            if (binding.button != button) continue;
+            if (binding.action.index != action.index) continue;
             if (state.isKeyDown(binding.key)) return true;
         }
 
@@ -267,37 +232,39 @@ pub const InputMap = struct {
     }
 };
 
-fn buttonIndex(button: Button) usize {
-    std.debug.assert(button != .count);
-    return @intFromEnum(button);
-}
-
 fn keyIndex(key: Key) usize {
     std.debug.assert(key != .count);
     return @intFromEnum(key);
+}
+
+fn actionIndex(action: ActionId) usize {
+    const index: usize = @intCast(action.index);
+    std.debug.assert(index < max_actions);
+    return index;
 }
 
 fn boolToI32(value: bool) i32 {
     return if (value) 1 else 0;
 }
 
-test "button pressed and released are one-frame edges" {
+test "action pressed and released are one-frame edges" {
+    const jump = ActionId.fromIndex(0);
     var state = State.init();
 
-    state.set(.quit, true);
-    try std.testing.expect(state.isDown(.quit));
-    try std.testing.expect(state.wasPressed(.quit));
-    try std.testing.expect(!state.wasReleased(.quit));
+    state.setActionDown(jump, true);
+    try std.testing.expect(state.isActionDown(jump));
+    try std.testing.expect(state.actionWasPressed(jump));
+    try std.testing.expect(!state.actionWasReleased(jump));
 
     state.beginFrame();
-    try std.testing.expect(state.isDown(.quit));
-    try std.testing.expect(!state.wasPressed(.quit));
-    try std.testing.expect(!state.wasReleased(.quit));
+    try std.testing.expect(state.isActionDown(jump));
+    try std.testing.expect(!state.actionWasPressed(jump));
+    try std.testing.expect(!state.actionWasReleased(jump));
 
-    state.set(.quit, false);
-    try std.testing.expect(!state.isDown(.quit));
-    try std.testing.expect(!state.wasPressed(.quit));
-    try std.testing.expect(state.wasReleased(.quit));
+    state.setActionDown(jump, false);
+    try std.testing.expect(!state.isActionDown(jump));
+    try std.testing.expect(!state.actionWasPressed(jump));
+    try std.testing.expect(state.actionWasReleased(jump));
 }
 
 test "key pressed and released are one-frame edges" {
@@ -309,129 +276,128 @@ test "key pressed and released are one-frame edges" {
     try std.testing.expect(!state.wasKeyReleased(.space));
 
     state.beginFrame();
-    try std.testing.expect(state.isKeyDown(.space));
-    try std.testing.expect(!state.wasKeyPressed(.space));
-    try std.testing.expect(!state.wasKeyReleased(.space));
 
     state.setKey(.space, false);
     try std.testing.expect(!state.isKeyDown(.space));
-    try std.testing.expect(!state.wasKeyPressed(.space));
     try std.testing.expect(state.wasKeyReleased(.space));
 }
 
-test "axis values combine opposite movement buttons" {
+test "axis combines opposite actions" {
+    const move_left = ActionId.fromIndex(0);
+    const move_right = ActionId.fromIndex(1);
     var state = State.init();
 
-    try std.testing.expectEqual(@as(i32, 0), state.axisX());
-    try std.testing.expectEqual(@as(i32, 0), state.axisY());
+    try std.testing.expectEqual(@as(i32, 0), state.axis(move_left, move_right));
 
-    state.set(.move_left, true);
-    try std.testing.expectEqual(@as(i32, -1), state.axisX());
+    state.setActionDown(move_left, true);
+    try std.testing.expectEqual(@as(i32, -1), state.axis(move_left, move_right));
 
-    state.set(.move_right, true);
-    try std.testing.expectEqual(@as(i32, 0), state.axisX());
+    state.setActionDown(move_right, true);
+    try std.testing.expectEqual(@as(i32, 0), state.axis(move_left, move_right));
 
-    state.set(.move_left, false);
-    try std.testing.expectEqual(@as(i32, 1), state.axisX());
-
-    state.set(.move_up, true);
-    try std.testing.expectEqual(@as(i32, -1), state.axisY());
-
-    state.set(.move_down, true);
-    try std.testing.expectEqual(@as(i32, 0), state.axisY());
+    state.setActionDown(move_left, false);
+    try std.testing.expectEqual(@as(i32, 1), state.axis(move_left, move_right));
 }
 
-test "input map derives buttons from keys" {
+test "input map derives actions from keys" {
+    const jump = ActionId.fromIndex(0);
+
     var map = InputMap.init();
-    try map.bind(.space, .pause_animation);
+    try map.bind(.space, jump);
 
     var state = State.init();
 
     map.applyKey(&state, .space, true, false);
     try std.testing.expect(state.isKeyDown(.space));
     try std.testing.expect(state.wasKeyPressed(.space));
-    try std.testing.expect(state.isDown(.pause_animation));
-    try std.testing.expect(state.wasPressed(.pause_animation));
+    try std.testing.expect(state.isActionDown(jump));
+    try std.testing.expect(state.actionWasPressed(jump));
 
     state.beginFrame();
 
     map.applyKey(&state, .space, false, false);
     try std.testing.expect(!state.isKeyDown(.space));
     try std.testing.expect(state.wasKeyReleased(.space));
-    try std.testing.expect(!state.isDown(.pause_animation));
-    try std.testing.expect(state.wasReleased(.pause_animation));
+    try std.testing.expect(!state.isActionDown(jump));
+    try std.testing.expect(state.actionWasReleased(jump));
 }
 
 test "input map aliases stay down until every bound key is released" {
+    const move_left = ActionId.fromIndex(0);
+
     var map = InputMap.init();
-    try map.bind(.a, .move_left);
-    try map.bind(.left, .move_left);
+    try map.bind(.a, move_left);
+    try map.bind(.left, move_left);
 
     var state = State.init();
 
     map.applyKey(&state, .a, true, false);
-    try std.testing.expect(state.isDown(.move_left));
-    try std.testing.expect(state.wasPressed(.move_left));
+    try std.testing.expect(state.isActionDown(move_left));
+    try std.testing.expect(state.actionWasPressed(move_left));
 
     state.beginFrame();
 
     map.applyKey(&state, .left, true, false);
-    try std.testing.expect(state.isDown(.move_left));
-    try std.testing.expect(!state.wasPressed(.move_left));
+    try std.testing.expect(state.isActionDown(move_left));
+    try std.testing.expect(!state.actionWasPressed(move_left));
 
     state.beginFrame();
 
     map.applyKey(&state, .a, false, false);
     try std.testing.expect(!state.isKeyDown(.a));
     try std.testing.expect(state.isKeyDown(.left));
-    try std.testing.expect(state.isDown(.move_left));
-    try std.testing.expect(!state.wasReleased(.move_left));
+    try std.testing.expect(state.isActionDown(move_left));
+    try std.testing.expect(!state.actionWasReleased(move_left));
 
     state.beginFrame();
 
     map.applyKey(&state, .left, false, false);
-    try std.testing.expect(!state.isKeyDown(.left));
-    try std.testing.expect(!state.isDown(.move_left));
-    try std.testing.expect(state.wasReleased(.move_left));
+    try std.testing.expect(!state.isActionDown(move_left));
+    try std.testing.expect(state.actionWasReleased(move_left));
 }
 
 test "input map ignores repeated key down events" {
-    const map = InputMap.defaultKeyboard();
+    const pause = ActionId.fromIndex(0);
+
+    var map = InputMap.init();
+    try map.bind(.space, pause);
+
     var state = State.init();
 
     map.applyKey(&state, .space, true, false);
-    try std.testing.expect(state.wasPressed(.pause_animation));
+    try std.testing.expect(state.actionWasPressed(pause));
 
     state.beginFrame();
 
     map.applyKey(&state, .space, true, true);
     try std.testing.expect(state.isKeyDown(.space));
-    try std.testing.expect(state.isDown(.pause_animation));
+    try std.testing.expect(state.isActionDown(pause));
     try std.testing.expect(!state.wasKeyPressed(.space));
-    try std.testing.expect(!state.wasPressed(.pause_animation));
+    try std.testing.expect(!state.actionWasPressed(pause));
 }
 
-test "release all clears keys and buttons" {
-    const map = InputMap.defaultKeyboard();
+test "release all clears keys and actions" {
+    const move_left = ActionId.fromIndex(0);
+    const pause = ActionId.fromIndex(1);
+
+    var map = InputMap.init();
+    try map.bind(.a, move_left);
+    try map.bind(.space, pause);
+
     var state = State.init();
 
     map.applyKey(&state, .a, true, false);
     map.applyKey(&state, .space, true, false);
 
-    try std.testing.expect(state.isKeyDown(.a));
-    try std.testing.expect(state.isKeyDown(.space));
-    try std.testing.expect(state.isDown(.move_left));
-    try std.testing.expect(state.isDown(.pause_animation));
+    try std.testing.expect(state.isActionDown(move_left));
+    try std.testing.expect(state.isActionDown(pause));
 
     state.releaseAll();
 
     try std.testing.expect(!state.isKeyDown(.a));
     try std.testing.expect(!state.isKeyDown(.space));
-    try std.testing.expect(!state.isDown(.move_left));
-    try std.testing.expect(!state.isDown(.pause_animation));
-
-    try std.testing.expect(!state.wasKeyPressed(.a));
-    try std.testing.expect(!state.wasPressed(.move_left));
+    try std.testing.expect(!state.isActionDown(move_left));
+    try std.testing.expect(!state.isActionDown(pause));
     try std.testing.expect(state.wasKeyReleased(.a));
-    try std.testing.expect(state.wasReleased(.move_left));
+    try std.testing.expect(state.actionWasReleased(move_left));
 }

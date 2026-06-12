@@ -7,6 +7,43 @@ const layer_world: i32 = 0;
 const layer_player: i32 = 10;
 const layer_overlay: i32 = 100;
 
+pub const Controls = struct {
+    pub const move_left = input.ActionId.fromIndex(0);
+    pub const move_right = input.ActionId.fromIndex(1);
+    pub const move_up = input.ActionId.fromIndex(2);
+    pub const move_down = input.ActionId.fromIndex(3);
+    pub const zoom_in = input.ActionId.fromIndex(4);
+    pub const zoom_out = input.ActionId.fromIndex(5);
+    pub const pause_animation = input.ActionId.fromIndex(6);
+    pub const reset_animation = input.ActionId.fromIndex(7);
+    pub const quit = input.ActionId.fromIndex(8);
+
+    pub fn defaultInputMap() input.InputMap {
+        var map = input.InputMap.init();
+
+        map.bind(.escape, quit) catch unreachable;
+        map.bind(.space, pause_animation) catch unreachable;
+        map.bind(.r, reset_animation) catch unreachable;
+
+        map.bind(.a, move_left) catch unreachable;
+        map.bind(.left, move_left) catch unreachable;
+
+        map.bind(.d, move_right) catch unreachable;
+        map.bind(.right, move_right) catch unreachable;
+
+        map.bind(.w, move_up) catch unreachable;
+        map.bind(.up, move_up) catch unreachable;
+
+        map.bind(.s, move_down) catch unreachable;
+        map.bind(.down, move_down) catch unreachable;
+
+        map.bind(.q, zoom_out) catch unreachable;
+        map.bind(.e, zoom_in) catch unreachable;
+
+        return map;
+    }
+};
+
 pub const Input = struct {
     move_x: i32 = 0,
     move_y: i32 = 0,
@@ -17,12 +54,12 @@ pub const Input = struct {
 
     pub fn fromState(state: *const input.State) Input {
         return .{
-            .move_x = state.axisX(),
-            .move_y = state.axisY(),
-            .zoom_in = state.isDown(.zoom_in),
-            .zoom_out = state.isDown(.zoom_out),
-            .pause_animation_pressed = state.wasPressed(.pause_animation),
-            .reset_animation_pressed = state.wasPressed(.reset_animation),
+            .move_x = state.axis(Controls.move_left, Controls.move_right),
+            .move_y = state.axis(Controls.move_up, Controls.move_down),
+            .zoom_in = state.isActionDown(Controls.zoom_in),
+            .zoom_out = state.isActionDown(Controls.zoom_out),
+            .pause_animation_pressed = state.actionWasPressed(Controls.pause_animation),
+            .reset_animation_pressed = state.actionWasPressed(Controls.reset_animation),
         };
     }
 };

@@ -62,7 +62,7 @@ pub fn runHelloWindow() !void {
     var fps_counter = time.FpsCounter.init(time.Duration.fromSeconds(1.0));
 
     var input_state = input.State.init();
-    const input_map = input.InputMap.defaultKeyboard();
+    const input_map = demo.Controls.defaultInputMap();
     var demo_state = demo.Demo.init(player_animation, debug_atlas);
 
     var world_draw_list = render2d.DrawList.init();
@@ -103,7 +103,7 @@ pub fn runHelloWindow() !void {
             }
         }
 
-        if (input_state.wasPressed(.quit)) {
+        if (input_state.actionWasPressed(demo.Controls.quit)) {
             running = false;
         }
 
