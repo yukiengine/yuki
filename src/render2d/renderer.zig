@@ -1,12 +1,30 @@
+//! wgpu-backed 2D renderer implementation.
+//!
+//! This file owns GPU resources and turns public render2d draw data into
+//! vertex buffers, render pipeline state, and draw calls.
+
 const std = @import("std");
 const c = @import("../backend/webgpu_c.zig").c;
+const types = @import("types.zig");
 
-const max_quads = 128;
+const max_quads = types.max_quads;
 const vertices_per_quad = 6;
 const max_vertices = max_quads * vertices_per_quad;
 const max_textures = 8;
 
-pub const Error = error{
+pub const Vector2 = types.Vector2;
+pub const Transform2D = types.Transform2D;
+pub const ColorRgba = types.ColorRgba;
+pub const UvRect = types.UvRect;
+pub const TextureId = types.TextureId;
+pub const Quad = types.Quad;
+pub const Sprite = types.Sprite;
+pub const Camera2D = types.Camera2D;
+pub const Frame = types.Frame;
+pub const DrawList = types.DrawList;
+pub const TextureAtlas = types.TextureAtlas;
+
+pub const Error = types.DrawError || error{
     CreateShaderModuleFailed,
     CreatePipelineLayoutFailed,
     CreateRenderPipelineFailed,
@@ -19,288 +37,13 @@ pub const Error = error{
     TextureTableFull,
     InvalidTextureSize,
     InvalidTextureData,
-    TooManyQuads,
 };
 
-pub const Vector2 = extern struct {
-    x: f32,
-    y: f32,
-
-    pub fn xy(x: f32, y: f32) Vector2 {
-        return .{ .x = x, .y = y };
-    }
-};
-
-pub const Transform2D = struct {
-    position: Vector2,
-    size: Vector2,
-    rotation_radians: f32 = 0.0,
-
-    pub fn init(position: Vector2, size: Vector2) Transform2D {
-        return .{
-            .position = position,
-            .size = size,
-        };
-    }
-
-    pub fn rotated(position: Vector2, size: Vector2, rotation_radians: f32) Transform2D {
-        return .{
-            .position = position,
-            .size = size,
-            .rotation_radians = rotation_radians,
-        };
-    }
-};
-
+/// GPU vertex layout consumed by the quad shader.
 const Vertex = extern struct {
     position: Vector2,
     color: ColorRgba,
     uv: Vector2,
-};
-
-pub const ColorRgba = extern struct {
-    r: f32,
-    g: f32,
-    b: f32,
-    a: f32,
-
-    pub fn rgba(r: f32, g: f32, b: f32, a: f32) ColorRgba {
-        return .{ .r = r, .g = g, .b = b, .a = a };
-    }
-
-    pub fn rgb(r: f32, g: f32, b: f32) ColorRgba {
-        return rgba(r, g, b, 1.0);
-    }
-};
-
-pub const UvRect = extern struct {
-    min: Vector2,
-    max: Vector2,
-
-    pub fn full() UvRect {
-        return .{
-            .min = Vector2.xy(0.0, 0.0),
-            .max = Vector2.xy(1.0, 1.0),
-        };
-    }
-
-    pub fn init(min: Vector2, max: Vector2) UvRect {
-        return .{ .min = min, .max = max };
-    }
-};
-
-pub const Quad = struct {
-    transform: Transform2D,
-    color: ColorRgba,
-    texture: TextureId = TextureId.default(),
-    uv: UvRect = UvRect.full(),
-    layer: i32 = 0,
-
-    pub fn init(position: Vector2, size: Vector2, color: ColorRgba) Quad {
-        return .{
-            .transform = Transform2D.init(position, size),
-            .color = color,
-        };
-    }
-
-    pub fn sprite(position: Vector2, size: Vector2, sprite_value: Sprite) Quad {
-        return .{
-            .transform = Transform2D.init(position, size),
-            .color = sprite_value.tint,
-            .texture = sprite_value.texture,
-            .uv = sprite_value.uv,
-        };
-    }
-
-    pub fn spriteTransform(transform: Transform2D, sprite_value: Sprite) Quad {
-        return .{
-            .transform = transform,
-            .color = sprite_value.tint,
-            .texture = sprite_value.texture,
-            .uv = sprite_value.uv,
-        };
-    }
-
-    pub fn withLayer(self: Quad, layer: i32) Quad {
-        var quad = self;
-        quad.layer = layer;
-        return quad;
-    }
-};
-
-pub const Sprite = struct {
-    texture: TextureId = TextureId.default(),
-    uv: UvRect = UvRect.full(),
-    tint: ColorRgba = ColorRgba.rgb(1.0, 1.0, 1.0),
-
-    pub fn init(texture: TextureId) Sprite {
-        return .{
-            .texture = texture,
-        };
-    }
-
-    pub fn region(texture: TextureId, uv: UvRect) Sprite {
-        return .{
-            .texture = texture,
-            .uv = uv,
-        };
-    }
-
-    pub fn tinted(texture: TextureId, uv: UvRect, tint: ColorRgba) Sprite {
-        return .{
-            .texture = texture,
-            .uv = uv,
-            .tint = tint,
-        };
-    }
-};
-
-pub const Camera2D = struct {
-    position: Vector2 = .{ .x = 0.0, .y = 0.0 },
-    zoom: f32 = 1.0,
-
-    pub fn init(position: Vector2, zoom: f32) Camera2D {
-        std.debug.assert(zoom > 0.0);
-
-        return .{
-            .position = position,
-            .zoom = zoom,
-        };
-    }
-};
-
-pub const Frame = struct {
-    clear_color: ColorRgba,
-    quads: []const Quad,
-    camera: Camera2D,
-
-    pub fn init(clear_color: ColorRgba, quads: []const Quad) Frame {
-        return .{
-            .clear_color = clear_color,
-            .quads = quads,
-            .camera = .{},
-        };
-    }
-
-    pub fn withCamera(clear_color: ColorRgba, camera: Camera2D, quads: []const Quad) Frame {
-        return .{
-            .clear_color = clear_color,
-            .camera = camera,
-            .quads = quads,
-        };
-    }
-};
-
-pub const DrawList = struct {
-    quads: [max_quads]Quad,
-    quad_count: usize,
-
-    pub fn init() DrawList {
-        return .{
-            .quads = undefined,
-            .quad_count = 0,
-        };
-    }
-
-    pub fn drawQuad(self: *DrawList, quad: Quad) !void {
-        if (self.quad_count == max_quads) return Error.TooManyQuads;
-
-        self.quads[self.quad_count] = quad;
-        self.quad_count += 1;
-    }
-
-    pub fn drawSprite(self: *DrawList, position: Vector2, size: Vector2, sprite: Sprite) !void {
-        try self.drawQuad(Quad.sprite(position, size, sprite));
-    }
-
-    pub fn items(self: *const DrawList) []const Quad {
-        return self.quads[0..self.quad_count];
-    }
-
-    pub fn frame(self: *const DrawList, clear_color: ColorRgba, camera: Camera2D) Frame {
-        return Frame.withCamera(clear_color, camera, self.items());
-    }
-
-    pub fn beginFrame(self: *DrawList) void {
-        self.quad_count = 0;
-    }
-
-    pub fn drawSpriteTransform(self: *DrawList, transform: Transform2D, sprite: Sprite) !void {
-        try self.drawQuad(Quad.spriteTransform(transform, sprite));
-    }
-
-    fn lessThanLayer(_: void, lhs: Quad, rhs: Quad) bool {
-        return lhs.layer < rhs.layer;
-    }
-
-    pub fn sortByLayer(self: *DrawList) void {
-        std.mem.sort(Quad, self.quads[0..self.quad_count], {}, lessThanLayer);
-    }
-
-    pub fn drawSpriteLayer(self: *DrawList, position: Vector2, size: Vector2, sprite: Sprite, layer: i32) !void {
-        try self.drawQuad(Quad.sprite(position, size, sprite).withLayer(layer));
-    }
-
-    pub fn drawSpriteTransformLayer(self: *DrawList, transform: Transform2D, sprite: Sprite, layer: i32) !void {
-        try self.drawQuad(Quad.spriteTransform(transform, sprite).withLayer(layer));
-    }
-
-    pub fn sortedFrame(self: *DrawList, clear_color: ColorRgba, camera: Camera2D) Frame {
-        self.sortByLayer();
-        return self.frame(clear_color, camera);
-    }
-};
-
-pub const TextureAtlas = struct {
-    texture: TextureId,
-    width: u32,
-    height: u32,
-
-    pub fn init(texture: TextureId, width: u32, height: u32) TextureAtlas {
-        std.debug.assert(width > 0);
-        std.debug.assert(height > 0);
-
-        return .{
-            .texture = texture,
-            .width = width,
-            .height = height,
-        };
-    }
-
-    pub fn uvPixels(self: TextureAtlas, x: u32, y: u32, width: u32, height: u32) UvRect {
-        std.debug.assert(width > 0);
-        std.debug.assert(height > 0);
-        std.debug.assert(x < self.width);
-        std.debug.assert(y < self.height);
-        std.debug.assert(width <= self.width - x);
-        std.debug.assert(height <= self.height - y);
-
-        const atlas_width = @as(f32, @floatFromInt(self.width));
-        const atlas_height = @as(f32, @floatFromInt(self.height));
-
-        const left = @as(f32, @floatFromInt(x)) / atlas_width;
-        const top = @as(f32, @floatFromInt(y)) / atlas_height;
-        const right = @as(f32, @floatFromInt(x + width)) / atlas_width;
-        const bottom = @as(f32, @floatFromInt(y + height)) / atlas_height;
-
-        return UvRect.init(
-            Vector2.xy(left, top),
-            Vector2.xy(right, bottom),
-        );
-    }
-
-    pub fn spritePixels(self: TextureAtlas, x: u32, y: u32, width: u32, height: u32) Sprite {
-        return Sprite.region(self.texture, self.uvPixels(x, y, width, height));
-    }
-
-    pub fn spriteGrid(self: TextureAtlas, column: u32, row: u32, cell_width: u32, cell_height: u32) Sprite {
-        return self.spritePixels(
-            column * cell_width,
-            row * cell_height,
-            cell_width,
-            cell_height,
-        );
-    }
 };
 
 const quad_shader =
@@ -333,6 +76,7 @@ const quad_shader =
     \\}
 ;
 
+/// GPU texture, view, and bind group owned by the renderer.
 const Texture2D = struct {
     texture: c.WGPUTexture,
     view: c.WGPUTextureView,
@@ -348,14 +92,7 @@ const Texture2D = struct {
     }
 };
 
-pub const TextureId = extern struct {
-    index: u32,
-
-    pub fn default() TextureId {
-        return .{ .index = 0 };
-    }
-};
-
+/// Owns the GPU resources needed to render 2D quads.
 pub const Renderer2D = struct {
     pipeline: c.WGPURenderPipeline,
     vertex_buffer: c.WGPUBuffer,
@@ -367,6 +104,7 @@ pub const Renderer2D = struct {
     textures: [max_textures]Texture2D,
     texture_count: usize,
 
+    /// Creates the quad pipeline, vertex buffer, sampler, and default texture.
     pub fn init(device: c.WGPUDevice, queue: c.WGPUQueue, format: c.WGPUTextureFormat) !Renderer2D {
         const vertex_buffer = try createQuadVertexBuffer(device);
         errdefer c.wgpuBufferRelease(vertex_buffer);
@@ -399,7 +137,7 @@ pub const Renderer2D = struct {
             }
         }
 
-        _ = renderer.addTexture(try createCheckerTexture(
+        _ = renderer.addTexture(try createWhiteTexture(
             device,
             queue,
             texture_bind_group_layout,
@@ -409,6 +147,7 @@ pub const Renderer2D = struct {
         return renderer;
     }
 
+    /// Releases all GPU resources owned by the renderer.
     pub fn deinit(self: *Renderer2D) void {
         var index: usize = self.texture_count;
         while (index > 0) {
@@ -423,6 +162,7 @@ pub const Renderer2D = struct {
         self.* = undefined;
     }
 
+    /// Uploads queued quads to the GPU and records draw calls into the render pass.
     pub fn flush(
         self: *Renderer2D,
         queue: c.WGPUQueue,
@@ -440,11 +180,25 @@ pub const Renderer2D = struct {
         c.wgpuRenderPassEncoderSetPipeline(pass, self.pipeline);
         c.wgpuRenderPassEncoderSetVertexBuffer(pass, 0, self.vertex_buffer, 0, vertex_data_size);
 
-        for (self.quads[0..self.quad_count], 0..) |quad, index| {
-            c.wgpuRenderPassEncoderSetBindGroup(pass, 0, self.textureBindGroup(quad.texture), 0, null);
+        var quad_start: usize = 0;
 
-            const first_vertex: u32 = @intCast(index * vertices_per_quad);
-            c.wgpuRenderPassEncoderDraw(pass, vertices_per_quad, 1, first_vertex, 0);
+        while (quad_start < self.quad_count) {
+            const texture = self.quads[quad_start].texture;
+
+            var quad_end = quad_start + 1;
+            while (quad_end < self.quad_count and sameTexture(self.quads[quad_start], self.quads[quad_end])) {
+                quad_end += 1;
+            }
+
+            const first_vertex: u32 = @intCast(quad_start * vertices_per_quad);
+            const quad_run_count = quad_end - quad_start;
+            const vertex_run_count: u32 = @intCast(quad_run_count * vertices_per_quad);
+            // std.log.info("quad batch: texture={d}, quads={d}", .{ texture.index, quad_run_count });
+
+            c.wgpuRenderPassEncoderSetBindGroup(pass, 0, self.textureBindGroup(texture), 0, null);
+            c.wgpuRenderPassEncoderDraw(pass, vertex_run_count, 1, first_vertex, 0);
+
+            quad_start = quad_end;
         }
     }
 
@@ -559,6 +313,7 @@ pub const Renderer2D = struct {
         return id;
     }
 
+    /// Uploads RGBA8 pixel data and returns a texture handle for future draws.
     pub fn createTextureFromRgbaPixels(
         self: *Renderer2D,
         device: c.WGPUDevice,
@@ -584,8 +339,13 @@ pub const Renderer2D = struct {
 
         return self.addTexture(texture);
     }
+
+    fn sameTexture(lhs: Quad, rhs: Quad) bool {
+        return lhs.texture.index == rhs.texture.index;
+    }
 };
 
+/// Converts queued quads from world space into clip-space vertices.
 fn createQuadPipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat, texture_bind_group_layout: c.WGPUBindGroupLayout) !c.WGPURenderPipeline {
     var wgsl_source: c.WGPUShaderSourceWGSL = std.mem.zeroes(c.WGPUShaderSourceWGSL);
     wgsl_source.chain.sType = c.WGPUSType_ShaderSourceWGSL;
@@ -612,8 +372,17 @@ fn createQuadPipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat, texture
     };
     defer c.wgpuPipelineLayoutRelease(layout);
 
+    var blend_state: c.WGPUBlendState = std.mem.zeroes(c.WGPUBlendState);
+    blend_state.color.operation = c.WGPUBlendOperation_Add;
+    blend_state.color.srcFactor = c.WGPUBlendFactor_SrcAlpha;
+    blend_state.color.dstFactor = c.WGPUBlendFactor_OneMinusSrcAlpha;
+    blend_state.alpha.operation = c.WGPUBlendOperation_Add;
+    blend_state.alpha.srcFactor = c.WGPUBlendFactor_One;
+    blend_state.alpha.dstFactor = c.WGPUBlendFactor_OneMinusSrcAlpha;
+
     var color_target: c.WGPUColorTargetState = std.mem.zeroes(c.WGPUColorTargetState);
     color_target.format = format;
+    color_target.blend = &blend_state;
     color_target.writeMask = c.WGPUColorWriteMask_All;
 
     var fragment: c.WGPUFragmentState = std.mem.zeroes(c.WGPUFragmentState);
@@ -797,27 +566,29 @@ fn createTextureBindGroup(
         Error.CreateBindGroupFailed;
 }
 
-fn createCheckerTexture(
+// fn createCheckerTexture(
+//     device: c.WGPUDevice,
+//     queue: c.WGPUQueue,
+//     bind_group_layout: c.WGPUBindGroupLayout,
+//     sampler: c.WGPUSampler,
+// ) !Texture2D {
+//     const pixels = [_]u8{
+//         255, 255, 255, 255, 32,  32,  32,  255,
+//         32,  32,  32,  255, 255, 255, 255, 255,
+//     };
+//
+//     return createTexture2DFromRgbaPixels(device, queue, bind_group_layout, sampler, "checker texture", 2, 2, pixels[0..]);
+// }
+
+fn createWhiteTexture(
     device: c.WGPUDevice,
     queue: c.WGPUQueue,
     bind_group_layout: c.WGPUBindGroupLayout,
     sampler: c.WGPUSampler,
 ) !Texture2D {
-    const pixels = [_]u8{
-        255, 255, 255, 255, 32,  32,  32,  255,
-        32,  32,  32,  255, 255, 255, 255, 255,
-    };
+    const pixels = [_]u8{ 255, 255, 255, 255 };
 
-    return createTexture2DFromRgbaPixels(
-        device,
-        queue,
-        bind_group_layout,
-        sampler,
-        "checker texture",
-        2,
-        2,
-        pixels[0..],
-    );
+    return createTexture2DFromRgbaPixels(device, queue, bind_group_layout, sampler, "white texture", 1, 1, pixels[0..]);
 }
 
 fn createTexture2DFromRgbaPixels(

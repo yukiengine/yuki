@@ -162,6 +162,20 @@ pub const Gpu = struct {
 
         self.renderer_2d.flush(self.queue, pass, self.width, self.height, frame.camera);
 
+        // Screen quads
+        self.renderer_2d.beginFrame();
+        for (frame.screen_quads) |quad| {
+            self.renderer_2d.drawQuad(quad);
+        }
+
+        self.renderer_2d.flush(
+            self.queue,
+            pass,
+            self.width,
+            self.height,
+            render2d.Camera2D.init(render2d.Vector2.xy(0.0, 0.0), 1.0),
+        );
+
         // End pass
         c.wgpuRenderPassEncoderEnd(pass);
         c.wgpuRenderPassEncoderRelease(pass);

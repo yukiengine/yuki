@@ -3,12 +3,18 @@ const wgpu = @import("wgpu.zig");
 const c = @import("sdl_c.zig").c;
 const render2d = @import("../render2d/renderer.zig");
 
+const layer_background: i32 = -10;
+const layer_world: i32 = 0;
+const layer_player: i32 = 10;
+const layer_overlay: i32 = 100;
+
 pub const Error = error{ InitFailed, CreateWindowFailed, CreateRendererFailed, RenderFailed, GetWindowSizeFailed };
 
 const GameState = struct {
     x: f32 = 0.0,
     y: f32 = 0.0,
     rotation: f32 = 0.0,
+    camera_zoom: f32 = 1.0,
 };
 
 /// Delta time
@@ -38,6 +44,8 @@ const Input = struct {
     right: bool = false,
     up: bool = false,
     down: bool = false,
+    zoom_in: bool = false,
+    zoom_out: bool = false,
 
     fn boolToI32(value: bool) i32 {
         return if (value) 1 else 0;
@@ -93,7 +101,8 @@ pub fn runHelloWindow() !void {
     var input = Input{};
     var game_state = GameState{};
 
-    var draw_list = render2d.DrawList.init();
+    var world_draw_list = render2d.DrawList.init();
+    var screen_draw_list = render2d.DrawList.init();
 
     var running = true;
     while (running) {
@@ -124,6 +133,8 @@ pub fn runHelloWindow() !void {
                         c.SDLK_D, c.SDLK_RIGHT => input.right = pressed,
                         c.SDLK_W, c.SDLK_UP => input.up = pressed,
                         c.SDLK_S, c.SDLK_DOWN => input.down = pressed,
+                        c.SDLK_Q => input.zoom_out = pressed,
+                        c.SDLK_E => input.zoom_in = pressed,
                         else => {},
                     }
                 },
@@ -164,31 +175,70 @@ pub fn runHelloWindow() !void {
             game_state.rotation -= tau;
         }
 
+        // Camera
+        const zoom_speed: f32 = 1.5;
+
+        if (input.zoom_in) {
+            game_state.camera_zoom += zoom_speed * dt_seconds;
+        }
+
+        if (input.zoom_out) {
+            game_state.camera_zoom -= zoom_speed * dt_seconds;
+        }
+
+        if (game_state.camera_zoom < 0.25) {
+            game_state.camera_zoom = 0.25;
+        }
+
+        if (game_state.camera_zoom > 4.0) {
+            game_state.camera_zoom = 4.0;
+        }
+
+        const camera = render2d.Camera2D.init(render2d.Vector2.xy(game_state.x, game_state.y), game_state.camera_zoom);
+
         // Render frame
-        draw_list.beginFrame();
+        world_draw_list.beginFrame();
+        screen_draw_list.beginFrame();
 
-        const camera = render2d.Camera2D.init(render2d.Vector2.xy(0.0, 0.0), 1.0);
+        // Background
+        try world_draw_list.drawRectLayer(
+            render2d.Vector2.xy(0.0, 0.0),
+            render2d.Vector2.xy(360.0, 220.0),
+            render2d.ColorRgba.rgb(0.15, 0.18, 0.24),
+            layer_background,
+        );
 
-        try draw_list.drawSpriteTransformLayer(
+        // Overlay
+        try screen_draw_list.drawRectLayer(
+            render2d.Vector2.xy(80.0, 0.0),
+            render2d.Vector2.xy(360.0, 140.0),
+            render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.35),
+            layer_overlay,
+        );
+
+        // Moving
+        try world_draw_list.drawSpriteTransformLayer(
             render2d.Transform2D.rotated(
                 render2d.Vector2.xy(game_state.x, game_state.y),
                 render2d.Vector2.xy(80.0, 80.0),
                 game_state.rotation,
             ),
             debug_atlas.spritePixels(1, 0, 1, 1),
-            10,
+            layer_player,
         );
 
-        try draw_list.drawSpriteLayer(
+        // Static
+        try world_draw_list.drawSpriteLayer(
             render2d.Vector2.xy(-180.0, -120.0),
             render2d.Vector2.xy(80.0, 80.0),
             debug_atlas.spritePixels(0, 0, 1, 1),
-            0,
+            layer_world,
         );
 
-        try gpu.render(draw_list.sortedFrame(
+        try gpu.render(world_draw_list.sortedFrameWithScreen(
             render2d.ColorRgba.rgb(0.05, 0.06, 0.08),
             camera,
+            &screen_draw_list,
         ));
 
         // Delay to run ~60FPS
