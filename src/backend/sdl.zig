@@ -62,6 +62,7 @@ pub fn runHelloWindow() !void {
     var fps_counter = time.FpsCounter.init(time.Duration.fromSeconds(1.0));
 
     var input_state = input.State.init();
+    const input_map = input.InputMap.defaultKeyboard();
     var demo_state = demo.Demo.init(player_animation, debug_atlas);
 
     var world_draw_list = render2d.DrawList.init();
@@ -86,41 +87,12 @@ pub fn runHelloWindow() !void {
                         gpu.resize(@intCast(width_new), @intCast(height_new));
                     }
                 },
-                c.SDL_EVENT_KEY_DOWN,
-                c.SDL_EVENT_KEY_UP,
-                => {
+                c.SDL_EVENT_KEY_DOWN, c.SDL_EVENT_KEY_UP => {
                     const pressed = event.type == c.SDL_EVENT_KEY_DOWN;
                     const repeated = event.key.repeat;
 
-                    switch (event.key.key) {
-                        c.SDLK_ESCAPE => if (!repeated) {
-                            input_state.set(.quit, pressed);
-                        },
-                        c.SDLK_SPACE => if (!repeated) {
-                            input_state.set(.pause_animation, pressed);
-                        },
-                        c.SDLK_R => if (!repeated) {
-                            input_state.set(.reset_animation, pressed);
-                        },
-                        c.SDLK_A, c.SDLK_LEFT => {
-                            input_state.set(.move_left, pressed);
-                        },
-                        c.SDLK_D, c.SDLK_RIGHT => {
-                            input_state.set(.move_right, pressed);
-                        },
-                        c.SDLK_W, c.SDLK_UP => {
-                            input_state.set(.move_up, pressed);
-                        },
-                        c.SDLK_S, c.SDLK_DOWN => {
-                            input_state.set(.move_down, pressed);
-                        },
-                        c.SDLK_Q => {
-                            input_state.set(.zoom_out, pressed);
-                        },
-                        c.SDLK_E => {
-                            input_state.set(.zoom_in, pressed);
-                        },
-                        else => {},
+                    if (keyFromSdlKey(event.key.key)) |key| {
+                        input_map.applyKey(&input_state, key, pressed, repeated);
                     }
                 },
 
@@ -161,4 +133,27 @@ pub fn runHelloWindow() !void {
         // Delay to run ~60FPS
         limiter.wait(frame.started_at_ns);
     }
+}
+
+fn keyFromSdlKey(key: c.SDL_Keycode) ?input.Key {
+    return switch (key) {
+        c.SDLK_ESCAPE => .escape,
+        c.SDLK_SPACE => .space,
+        c.SDLK_R => .r,
+
+        c.SDLK_A => .a,
+        c.SDLK_D => .d,
+        c.SDLK_W => .w,
+        c.SDLK_S => .s,
+
+        c.SDLK_Q => .q,
+        c.SDLK_E => .e,
+
+        c.SDLK_LEFT => .left,
+        c.SDLK_RIGHT => .right,
+        c.SDLK_UP => .up,
+        c.SDLK_DOWN => .down,
+
+        else => null,
+    };
 }
