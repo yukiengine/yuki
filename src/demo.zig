@@ -3,8 +3,7 @@ const render2d = @import("render2d/renderer.zig");
 const input = @import("input.zig");
 const tilemap = @import("tilemap.zig");
 const debug_draw = @import("debug_draw.zig");
-const world2d = @import("world2d.zig");
-const prefab2d = @import("prefab2d.zig");
+const scene2d = @import("scene2d.zig");
 
 const layer_background: i32 = -20;
 const layer_tilemap: i32 = -10;
@@ -121,9 +120,8 @@ pub const Input = struct {
 };
 
 pub const Demo = struct {
-    actors: world2d.World,
-    prefabs: prefab2d.PrefabCatalog,
-    player: world2d.ActorId,
+    scene: scene2d.Scene,
+    player: scene2d.ActorId,
     camera_zoom: f32 = 1.0,
     tile_storage: DemoTilemap,
     tile_rules: tilemap.TileRules,
@@ -132,34 +130,32 @@ pub const Demo = struct {
 
     /// Creates the demo scene, prefab catalog, and initial actors.
     pub fn init(player_animation: render2d.SpriteAnimation, debug_atlas: render2d.TextureAtlas) Demo {
-        var actors = world2d.World.init();
-        var prefabs = prefab2d.PrefabCatalog.init();
+        var scene = scene2d.Scene.init();
 
-        const player_prefab = prefabs.add(.{
+        const player_prefab = scene.registerPrefab(.{
             .name = "demo.player",
             .size = player_size,
             .animation = player_animation,
             .layer = layer_player,
         }) catch unreachable;
 
-        const marker_prefab = prefabs.add(.{
+        const marker_prefab = scene.registerPrefab(.{
             .name = "demo.marker",
             .size = player_size,
             .sprite = debug_atlas.spritePixels(0, 0, 1, 1),
             .layer = layer_world,
         }) catch unreachable;
 
-        const player = prefabs.spawn(player_prefab, &actors, .{
+        const player = scene.spawn(player_prefab, .{
             .position = render2d.Vector2.xy(0.0, 0.0),
         }) catch unreachable;
 
-        _ = prefabs.spawn(marker_prefab, &actors, .{
+        _ = scene.spawn(marker_prefab, .{
             .position = render2d.Vector2.xy(-180.0, -120.0),
         }) catch unreachable;
 
         return .{
-            .actors = actors,
-            .prefabs = prefabs,
+            .scene = scene,
             .player = player,
             .tile_storage = buildDemoMap(),
             .tile_rules = buildTileRules(),
@@ -180,7 +176,7 @@ pub const Demo = struct {
 
         const map = self.tile_storage.view(demo_tile_size);
 
-        _ = self.actors.moveActorWithTilemap(
+        _ = self.scene.moveActorWithTilemap(
             self.player,
             map,
             self.tile_rules,
@@ -188,14 +184,14 @@ pub const Demo = struct {
             movement,
         );
 
-        if (self.actors.get(self.player)) |player| {
+        if (self.scene.actor(self.player)) |player| {
             if (input_state.pause_animation_pressed) player.toggleAnimation();
             if (input_state.reset_animation_pressed) player.resetAnimation();
 
             player.rotateBy(2.0 * dt_seconds);
         }
 
-        self.actors.updateAnimations(dt_seconds);
+        self.scene.updateAnimations(dt_seconds);
 
         const zoom_speed: f32 = 1.5;
         if (input_state.zoom_in) self.camera_zoom += zoom_speed * dt_seconds;
@@ -205,7 +201,7 @@ pub const Demo = struct {
 
     /// Returns a camera that follows the player actor.
     pub fn camera(self: Demo) render2d.Camera2D {
-        const position = if (self.actors.getConst(self.player)) |player|
+        const position = if (self.scene.actorConst(self.player)) |player|
             player.position
         else
             render2d.Vector2.xy(0.0, 0.0);
@@ -243,7 +239,7 @@ pub const Demo = struct {
             layer_overlay,
         );
 
-        try self.actors.drawVisible(world, visible_world);
+        try self.scene.drawVisible(world, visible_world);
 
         if (self.show_collision_debug) {
             try self.drawCollisionDebug(world, map, visible_world);
@@ -283,7 +279,7 @@ pub const Demo = struct {
             }
         }
 
-        const player = self.actors.getConst(self.player) orelse return;
+        const player = self.scene.actorConst(self.player) orelse return;
 
         try debug.rectOutline(
             player.bounds(),
