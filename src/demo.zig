@@ -3,6 +3,7 @@ const render2d = @import("render2d/renderer.zig");
 const input = @import("input.zig");
 const tilemap = @import("tilemap.zig");
 const debug_draw = @import("debug_draw.zig");
+const world2d = @import("world2d.zig");
 
 const layer_background: i32 = -20;
 const layer_tilemap: i32 = -10;
@@ -15,7 +16,9 @@ const demo_map_width: u32 = 10;
 const demo_map_height: u32 = 8;
 const demo_tile_size = render2d.Vector2.xy(48.0, 48.0);
 const demo_map_origin = render2d.Vector2.xy(-240.0, -192.0);
+
 const player_size = render2d.Vector2.xy(80.0, 80.0);
+const player_speed: f32 = 240.0;
 
 const DemoTilemap = tilemap.StaticTilemap(demo_map_width, demo_map_height);
 
@@ -117,20 +120,29 @@ pub const Input = struct {
 };
 
 pub const Demo = struct {
-    x: f32 = 0.0,
-    y: f32 = 0.0,
-    rotation: f32 = 0.0,
+    actors: world2d.World,
+    player: world2d.ActorId,
     camera_zoom: f32 = 1.0,
-    animation_player: render2d.AnimationPlayer,
     debug_atlas: render2d.TextureAtlas,
     tile_storage: DemoTilemap,
     tile_rules: tilemap.TileRules,
     tileset: tilemap.Tileset,
     show_collision_debug: bool = false,
 
+    /// Creates the demo scene and its first actor.
     pub fn init(player_animation: render2d.SpriteAnimation, debug_atlas: render2d.TextureAtlas) Demo {
+        var actors = world2d.World.init();
+
+        const player = actors.spawn(.{
+            .position = render2d.Vector2.xy(0.0, 0.0),
+            .size = player_size,
+            .animation = player_animation,
+            .layer = layer_player,
+        }) catch unreachable;
+
         return .{
-            .animation_player = render2d.AnimationPlayer.init(player_animation),
+            .actors = actors,
+            .player = player,
             .debug_atlas = debug_atlas,
             .tile_storage = buildDemoMap(),
             .tile_rules = buildTileRules(),
@@ -138,35 +150,35 @@ pub const Demo = struct {
         };
     }
 
+    /// Advances demo simulation for one frame.
     pub fn update(self: *Demo, input_state: Input, dt_seconds: f32) void {
         if (input_state.toggle_debug_pressed) {
             self.show_collision_debug = !self.show_collision_debug;
         }
 
-        const speed: f32 = 240.0;
         const movement = render2d.Vector2.xy(
-            @as(f32, @floatFromInt(input_state.move_x)) * speed * dt_seconds,
-            @as(f32, @floatFromInt(input_state.move_y)) * speed * dt_seconds,
+            @as(f32, @floatFromInt(input_state.move_x)) * player_speed * dt_seconds,
+            @as(f32, @floatFromInt(input_state.move_y)) * player_speed * dt_seconds,
         );
 
         const map = self.tile_storage.view(demo_tile_size);
-        const moved = map.moveAabb(
+
+        _ = self.actors.moveActorWithTilemap(
+            self.player,
+            map,
             self.tile_rules,
             demo_map_origin,
-            render2d.Vector2.xy(self.x, self.y),
-            player_size,
             movement,
         );
 
-        self.x = moved.position.x;
-        self.y = moved.position.y;
+        if (self.actors.get(self.player)) |player| {
+            if (input_state.pause_animation_pressed) player.toggleAnimation();
+            if (input_state.reset_animation_pressed) player.resetAnimation();
 
-        if (input_state.pause_animation_pressed) self.animation_player.toggle();
-        if (input_state.reset_animation_pressed) self.animation_player.reset();
-        self.animation_player.update(dt_seconds);
+            player.rotateBy(2.0 * dt_seconds);
+        }
 
-        self.rotation += 2.0 * dt_seconds;
-        if (self.rotation >= std.math.tau) self.rotation -= std.math.tau;
+        self.actors.updateAnimations(dt_seconds);
 
         const zoom_speed: f32 = 1.5;
         if (input_state.zoom_in) self.camera_zoom += zoom_speed * dt_seconds;
@@ -174,8 +186,14 @@ pub const Demo = struct {
         self.camera_zoom = @max(0.25, @min(4.0, self.camera_zoom));
     }
 
+    /// Returns a camera that follows the player actor.
     pub fn camera(self: Demo) render2d.Camera2D {
-        return render2d.Camera2D.init(render2d.Vector2.xy(self.x, self.y), self.camera_zoom);
+        const position = if (self.actors.getConst(self.player)) |player|
+            player.position
+        else
+            render2d.Vector2.xy(0.0, 0.0);
+
+        return render2d.Camera2D.init(position, self.camera_zoom);
     }
 
     pub fn draw(
@@ -200,17 +218,16 @@ pub const Demo = struct {
             render2d.ColorRgba.rgb(0.15, 0.18, 0.24),
             layer_background,
         );
+
         try screen.drawRectLayer(
             render2d.Vector2.xy(80.0, 0.0),
             render2d.Vector2.xy(360.0, 140.0),
             render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.35),
             layer_overlay,
         );
-        try world.drawSpriteTransformLayer(
-            render2d.Transform2D.rotated(render2d.Vector2.xy(self.x, self.y), render2d.Vector2.xy(80.0, 80.0), self.rotation),
-            self.animation_player.sprite(),
-            layer_player,
-        );
+
+        try self.actors.drawVisible(world, visible_world);
+
         try world.drawSpriteLayer(
             render2d.Vector2.xy(-180.0, -120.0),
             player_size,
@@ -256,16 +273,15 @@ pub const Demo = struct {
             }
         }
 
+        const player = self.actors.getConst(self.player) orelse return;
+
         try debug.rectOutline(
-            render2d.Rect2D.fromCenterSize(
-                render2d.Vector2.xy(self.x, self.y),
-                player_size,
-            ),
+            player.bounds(),
             debug_player_color,
         );
 
         try debug.cross(
-            render2d.Vector2.xy(self.x, self.y),
+            player.position,
             16.0,
             debug_player_color,
         );
