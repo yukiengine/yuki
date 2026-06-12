@@ -28,6 +28,16 @@ const GameState = struct {
     animation_player: render2d.AnimationPlayer,
 };
 
+const LoadedTexture = struct {
+    texture: render2d.TextureId,
+    width: u32,
+    height: u32,
+
+    pub fn atlas(self: LoadedTexture) render2d.TextureAtlas {
+        return render2d.TextureAtlas.init(self.texture, self.width, self.height);
+    }
+};
+
 /// Delta time
 const FrameClock = struct {
     last_counter: u64,
@@ -100,7 +110,7 @@ pub fn runHelloWindow() !void {
 
     // BMP texture
     const player_texture = try loadBmpTexture(&gpu, "assets/player.bmp");
-    const player_atlas = render2d.TextureAtlas.init(player_texture, 2, 2);
+    const player_atlas = player_texture.atlas();
     const player_animation = render2d.SpriteAnimation.init(player_atlas, 0, 0, 2, 1, 1, 0.2);
 
     const debug_pixels = [_]u8{
@@ -285,7 +295,7 @@ pub fn runHelloWindow() !void {
     }
 }
 
-fn loadBmpTexture(gpu: *wgpu.Gpu, path: [:0]const u8) !render2d.TextureId {
+fn loadBmpTexture(gpu: *wgpu.Gpu, path: [:0]const u8) !LoadedTexture {
     const source = c.SDL_LoadBMP(path.ptr) orelse {
         std.log.err("SDL_LoadBMP failed: {s}", .{c.SDL_GetError()});
         return Error.LoadBmpFailed;
@@ -309,5 +319,9 @@ fn loadBmpTexture(gpu: *wgpu.Gpu, path: [:0]const u8) !render2d.TextureId {
     const pixels_ptr: [*]const u8 = @ptrCast(pixels_raw);
     const pixels = pixels_ptr[0 .. pitch * @as(usize, @intCast(height))];
 
-    return gpu.createTextureFromRgbaPixels(path, width, height, pixels);
+    return .{
+        .texture = try gpu.createTextureFromRgbaPixels(path, width, height, pixels),
+        .width = width,
+        .height = height,
+    };
 }
