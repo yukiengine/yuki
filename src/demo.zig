@@ -2,12 +2,14 @@ const std = @import("std");
 const render2d = @import("render2d/renderer.zig");
 const input = @import("input.zig");
 const tilemap = @import("tilemap.zig");
+const debug_draw = @import("debug_draw.zig");
 
 const layer_background: i32 = -20;
 const layer_tilemap: i32 = -10;
 const layer_world: i32 = 0;
 const layer_player: i32 = 10;
 const layer_overlay: i32 = 100;
+const layer_debug: i32 = 1000;
 
 const demo_map_width: u32 = 10;
 const demo_map_height: u32 = 8;
@@ -22,6 +24,11 @@ const tile_a = tilemap.Tile.fromAtlasIndex(0);
 const tile_b = tilemap.Tile.fromAtlasIndex(1);
 const tile_c = tilemap.Tile.fromAtlasIndex(2);
 const tile_d = tilemap.Tile.fromAtlasIndex(3);
+
+const debug_map_bounds_color = render2d.ColorRgba.rgba(1.0, 1.0, 1.0, 0.75);
+const debug_solid_fill_color = render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.20);
+const debug_solid_outline_color = render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.90);
+const debug_player_color = render2d.ColorRgba.rgba(0.1, 1.0, 0.3, 0.95);
 
 fn buildDemoMap() DemoTilemap {
     var map = DemoTilemap.filled(tile_empty);
@@ -57,6 +64,7 @@ pub const Controls = struct {
     pub const pause_animation = input.ActionId.fromIndex(6);
     pub const reset_animation = input.ActionId.fromIndex(7);
     pub const quit = input.ActionId.fromIndex(8);
+    pub const toggle_debug = input.ActionId.fromIndex(9);
 
     pub fn defaultInputMap() input.InputMap {
         var map = input.InputMap.init();
@@ -80,6 +88,8 @@ pub const Controls = struct {
         map.bind(.q, zoom_out) catch unreachable;
         map.bind(.e, zoom_in) catch unreachable;
 
+        map.bind(.f1, toggle_debug) catch unreachable;
+
         return map;
     }
 };
@@ -91,6 +101,7 @@ pub const Input = struct {
     zoom_out: bool = false,
     pause_animation_pressed: bool = false,
     reset_animation_pressed: bool = false,
+    toggle_debug_pressed: bool = false,
 
     pub fn fromState(state: *const input.State) Input {
         return .{
@@ -100,6 +111,7 @@ pub const Input = struct {
             .zoom_out = state.isActionDown(Controls.zoom_out),
             .pause_animation_pressed = state.actionWasPressed(Controls.pause_animation),
             .reset_animation_pressed = state.actionWasPressed(Controls.reset_animation),
+            .toggle_debug_pressed = state.actionWasPressed(Controls.toggle_debug),
         };
     }
 };
@@ -114,6 +126,7 @@ pub const Demo = struct {
     tile_storage: DemoTilemap,
     tile_rules: tilemap.TileRules,
     tileset: tilemap.Tileset,
+    show_collision_debug: bool = false,
 
     pub fn init(player_animation: render2d.SpriteAnimation, debug_atlas: render2d.TextureAtlas) Demo {
         return .{
@@ -126,6 +139,10 @@ pub const Demo = struct {
     }
 
     pub fn update(self: *Demo, input_state: Input, dt_seconds: f32) void {
+        if (input_state.toggle_debug_pressed) {
+            self.show_collision_debug = !self.show_collision_debug;
+        }
+
         const speed: f32 = 240.0;
         const movement = render2d.Vector2.xy(
             @as(f32, @floatFromInt(input_state.move_x)) * speed * dt_seconds,
@@ -199,6 +216,58 @@ pub const Demo = struct {
             player_size,
             self.debug_atlas.spritePixels(0, 0, 1, 1),
             layer_world,
+        );
+
+        if (self.show_collision_debug) {
+            try self.drawCollisionDebug(world, map, visible_world);
+        }
+    }
+
+    /// Draws debug overlays for collision tiles, player bounds, and map bounds.
+    fn drawCollisionDebug(
+        self: *const Demo,
+        world: *render2d.DrawList,
+        map: tilemap.Tilemap,
+        visible_world: render2d.Rect2D,
+    ) !void {
+        const debug = debug_draw.DebugDraw
+            .init(world, layer_debug)
+            .withThickness(2.0);
+
+        try debug.rectOutline(
+            map.worldBounds(demo_map_origin),
+            debug_map_bounds_color,
+        );
+
+        const range = map.visibleRange(demo_map_origin, visible_world);
+        if (!range.isEmpty()) {
+            var y = range.min_y;
+            while (y < range.max_y) : (y += 1) {
+                var x = range.min_x;
+                while (x < range.max_x) : (x += 1) {
+                    const tile = map.tileAt(x, y);
+                    if (!self.tile_rules.isSolid(tile)) continue;
+
+                    const bounds = map.tileBounds(demo_map_origin, x, y);
+
+                    try debug.fillRect(bounds, debug_solid_fill_color);
+                    try debug.rectOutline(bounds, debug_solid_outline_color);
+                }
+            }
+        }
+
+        try debug.rectOutline(
+            render2d.Rect2D.fromCenterSize(
+                render2d.Vector2.xy(self.x, self.y),
+                player_size,
+            ),
+            debug_player_color,
+        );
+
+        try debug.cross(
+            render2d.Vector2.xy(self.x, self.y),
+            16.0,
+            debug_player_color,
         );
     }
 };

@@ -34,6 +34,7 @@ pub const Key = enum(u8) {
     up,
     down,
 
+    f1,
     count,
 };
 

@@ -127,6 +127,8 @@ fn keyFromSdlKey(key: c.SDL_Keycode) ?input.Key {
         c.SDLK_UP => .up,
         c.SDLK_DOWN => .down,
 
+        c.SDLK_F1 => .f1,
+
         else => null,
     };
 }
