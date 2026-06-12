@@ -2,11 +2,8 @@ const std = @import("std");
 const wgpu = @import("wgpu.zig");
 const c = @import("sdl_c.zig").c;
 const render2d = @import("../render2d/renderer.zig");
-
-const layer_background: i32 = -10;
-const layer_world: i32 = 0;
-const layer_player: i32 = 10;
-const layer_overlay: i32 = 100;
+const assets = @import("../assets.zig");
+const demo = @import("../demo.zig");
 
 pub const Error = error{
     InitFailed,
@@ -14,28 +11,6 @@ pub const Error = error{
     CreateRendererFailed,
     RenderFailed,
     GetWindowSizeFailed,
-    LoadBmpFailed,
-    ConvertSurfaceFailed,
-    InvalidSurfacePixels,
-    UnsupportedSurfacePitch,
-};
-
-const GameState = struct {
-    x: f32 = 0.0,
-    y: f32 = 0.0,
-    rotation: f32 = 0.0,
-    camera_zoom: f32 = 1.0,
-    animation_player: render2d.AnimationPlayer,
-};
-
-const LoadedTexture = struct {
-    texture: render2d.TextureId,
-    width: u32,
-    height: u32,
-
-    pub fn atlas(self: LoadedTexture) render2d.TextureAtlas {
-        return render2d.TextureAtlas.init(self.texture, self.width, self.height);
-    }
 };
 
 /// Delta time
@@ -109,7 +84,7 @@ pub fn runHelloWindow() !void {
     defer gpu.deinit();
 
     // BMP texture
-    const player_texture = try loadBmpTexture(&gpu, "assets/player.bmp");
+    const player_texture = try assets.loadBmpTexture(&gpu, "assets/player.bmp");
     const player_atlas = player_texture.atlas();
     const player_animation = render2d.SpriteAnimation.init(player_atlas, 0, 0, 2, 1, 1, 0.2);
 
@@ -127,9 +102,7 @@ pub fn runHelloWindow() !void {
     var frame_index: u64 = 0;
 
     var input = Input{};
-    var game_state = GameState{
-        .animation_player = render2d.AnimationPlayer.init(player_animation),
-    };
+    var demo_state = demo.Demo.init(player_animation, debug_atlas);
 
     var world_draw_list = render2d.DrawList.init();
     var screen_draw_list = render2d.DrawList.init();
@@ -183,109 +156,36 @@ pub fn runHelloWindow() !void {
         const dt = clock.tick();
         frame_index += 1;
 
+        const dt_seconds: f32 = @floatCast(dt);
+
         // Logging every 120 FPS
         if (frame_index % 120 == 0) {
             std.log.info("frame dt: {d:.4}s", .{dt});
         }
 
-        // Movement
-        const move_x = input.axisX();
-        const move_y = input.axisY();
+        const frame_input = demo.Input{
+            .move_x = input.axisX(),
+            .move_y = input.axisY(),
+            .zoom_in = input.zoom_in,
+            .zoom_out = input.zoom_out,
+            .pause_animation_pressed = input.pause_animation_pressed,
+            .reset_animation_pressed = input.reset_animation_pressed,
+        };
 
-        const speed: f32 = 240.0; // units per second
-        const dt_seconds: f32 = @floatCast(dt);
+        input.pause_animation_pressed = false;
+        input.reset_animation_pressed = false;
 
-        game_state.x += @as(f32, @floatFromInt(move_x)) * speed * dt_seconds;
-        game_state.y += @as(f32, @floatFromInt(move_y)) * speed * dt_seconds;
-
-        if (frame_index % 30 == 0 and (move_x != 0 or move_y != 0)) {
-            std.log.info("input move: {d}, {d}", .{ move_x, move_y });
-            std.log.info("position: {d}, {d}", .{ game_state.x, game_state.y });
-        }
-
-        // Animations
-        if (input.pause_animation_pressed) {
-            game_state.animation_player.toggle();
-            input.pause_animation_pressed = false;
-        }
-
-        if (input.reset_animation_pressed) {
-            game_state.animation_player.reset();
-            input.reset_animation_pressed = false;
-        }
-        game_state.animation_player.update(dt_seconds);
-
-        // Rotation
-        const spin_speed: f32 = 2.0; // radians per second
-        game_state.rotation += spin_speed * dt_seconds;
-        const tau: f32 = std.math.tau;
-        if (game_state.rotation >= tau) {
-            game_state.rotation -= tau;
-        }
-
-        // Camera
-        const zoom_speed: f32 = 1.5;
-
-        if (input.zoom_in) {
-            game_state.camera_zoom += zoom_speed * dt_seconds;
-        }
-
-        if (input.zoom_out) {
-            game_state.camera_zoom -= zoom_speed * dt_seconds;
-        }
-
-        if (game_state.camera_zoom < 0.25) {
-            game_state.camera_zoom = 0.25;
-        }
-
-        if (game_state.camera_zoom > 4.0) {
-            game_state.camera_zoom = 4.0;
-        }
-
-        const camera = render2d.Camera2D.init(render2d.Vector2.xy(game_state.x, game_state.y), game_state.camera_zoom);
+        demo_state.update(frame_input, dt_seconds);
 
         // Render frame
         world_draw_list.beginFrame();
         screen_draw_list.beginFrame();
 
-        // Background
-        try world_draw_list.drawRectLayer(
-            render2d.Vector2.xy(0.0, 0.0),
-            render2d.Vector2.xy(360.0, 220.0),
-            render2d.ColorRgba.rgb(0.15, 0.18, 0.24),
-            layer_background,
-        );
-
-        // Overlay
-        try screen_draw_list.drawRectLayer(
-            render2d.Vector2.xy(80.0, 0.0),
-            render2d.Vector2.xy(360.0, 140.0),
-            render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.35),
-            layer_overlay,
-        );
-
-        // Moving
-        try world_draw_list.drawSpriteTransformLayer(
-            render2d.Transform2D.rotated(
-                render2d.Vector2.xy(game_state.x, game_state.y),
-                render2d.Vector2.xy(80.0, 80.0),
-                game_state.rotation,
-            ),
-            game_state.animation_player.sprite(),
-            layer_player,
-        );
-
-        // Static
-        try world_draw_list.drawSpriteLayer(
-            render2d.Vector2.xy(-180.0, -120.0),
-            render2d.Vector2.xy(80.0, 80.0),
-            debug_atlas.spritePixels(0, 0, 1, 1),
-            layer_world,
-        );
+        try demo_state.draw(&world_draw_list, &screen_draw_list);
 
         try gpu.render(world_draw_list.sortedFrameWithScreen(
             render2d.ColorRgba.rgb(0.05, 0.06, 0.08),
-            camera,
+            demo_state.camera(),
             &screen_draw_list,
         ));
 
@@ -293,35 +193,4 @@ pub fn runHelloWindow() !void {
         // TODO: Handle frame pacing with a proper frame limiter
         c.SDL_Delay(16);
     }
-}
-
-fn loadBmpTexture(gpu: *wgpu.Gpu, path: [:0]const u8) !LoadedTexture {
-    const source = c.SDL_LoadBMP(path.ptr) orelse {
-        std.log.err("SDL_LoadBMP failed: {s}", .{c.SDL_GetError()});
-        return Error.LoadBmpFailed;
-    };
-    defer c.SDL_DestroySurface(source);
-
-    const rgba = c.SDL_ConvertSurface(source, c.SDL_PIXELFORMAT_RGBA32) orelse {
-        std.log.err("SDL_ConvertSurface failed: {s}", .{c.SDL_GetError()});
-        return Error.ConvertSurfaceFailed;
-    };
-    defer c.SDL_DestroySurface(rgba);
-
-    const width: u32 = @intCast(rgba.*.w);
-    const height: u32 = @intCast(rgba.*.h);
-    const pitch: usize = @intCast(rgba.*.pitch);
-    const expected_pitch = @as(usize, @intCast(width)) * 4;
-
-    if (pitch != expected_pitch) return Error.UnsupportedSurfacePitch;
-
-    const pixels_raw = rgba.*.pixels orelse return Error.InvalidSurfacePixels;
-    const pixels_ptr: [*]const u8 = @ptrCast(pixels_raw);
-    const pixels = pixels_ptr[0 .. pitch * @as(usize, @intCast(height))];
-
-    return .{
-        .texture = try gpu.createTextureFromRgbaPixels(path, width, height, pixels),
-        .width = width,
-        .height = height,
-    };
 }
