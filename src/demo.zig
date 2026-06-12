@@ -35,6 +35,7 @@ const debug_map_bounds_color = render2d.ColorRgba.rgba(1.0, 1.0, 1.0, 0.75);
 const debug_solid_fill_color = render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.20);
 const debug_solid_outline_color = render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.90);
 const debug_player_color = render2d.ColorRgba.rgba(0.1, 1.0, 0.3, 0.95);
+const debug_marker_color = render2d.ColorRgba.rgba(0.2, 0.7, 1.0, 0.95);
 
 fn buildDemoMap() DemoTilemap {
     var map = DemoTilemap.filled(tile_empty);
@@ -285,6 +286,22 @@ pub const Demo = struct {
                     try debug.rectOutline(bounds, debug_solid_outline_color);
                 }
             }
+        }
+
+        var marker_hits = scene2d.ActorQueryResult.init();
+
+        try self.scene.collectActorsInRect(
+            scene2d.ActorQuery
+                .all(visible_world)
+                .withTag(tag_marker),
+            &marker_hits,
+        );
+
+        for (marker_hits.items()) |hit| {
+            try debug.rectOutline(
+                hit.bounds,
+                debug_marker_color,
+            );
         }
 
         try debug.rectOutline(
