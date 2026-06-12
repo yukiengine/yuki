@@ -4,6 +4,7 @@ const c = @import("sdl_c.zig").c;
 const render2d = @import("../render2d/renderer.zig");
 const assets = @import("../assets.zig");
 const demo = @import("../demo.zig");
+const input = @import("../input.zig");
 
 pub const Error = error{
     InitFailed,
@@ -31,30 +32,6 @@ const FrameClock = struct {
         self.last_counter = now;
 
         return @as(f64, @floatFromInt(delta)) / @as(f64, @floatFromInt(self.frequency));
-    }
-};
-
-/// Input handler
-const Input = struct {
-    left: bool = false,
-    right: bool = false,
-    up: bool = false,
-    down: bool = false,
-    zoom_in: bool = false,
-    zoom_out: bool = false,
-    pause_animation_pressed: bool = false,
-    reset_animation_pressed: bool = false,
-
-    fn boolToI32(value: bool) i32 {
-        return if (value) 1 else 0;
-    }
-
-    pub fn axisX(self: Input) i32 {
-        return boolToI32(self.right) - boolToI32(self.left);
-    }
-
-    pub fn axisY(self: Input) i32 {
-        return boolToI32(self.down) - boolToI32(self.up);
     }
 };
 
@@ -101,7 +78,7 @@ pub fn runHelloWindow() !void {
     var clock = FrameClock.init();
     var frame_index: u64 = 0;
 
-    var input = Input{};
+    var input_state = input.State.init();
     var demo_state = demo.Demo.init(player_animation, debug_atlas);
 
     var world_draw_list = render2d.DrawList.init();
@@ -109,6 +86,8 @@ pub fn runHelloWindow() !void {
 
     var running = true;
     while (running) {
+        input_state.beginFrame();
+
         // Event polling
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event)) {
@@ -128,28 +107,46 @@ pub fn runHelloWindow() !void {
                 c.SDL_EVENT_KEY_UP,
                 => {
                     const pressed = event.type == c.SDL_EVENT_KEY_DOWN;
+                    const repeated = event.key.repeat;
+
                     switch (event.key.key) {
-                        c.SDLK_ESCAPE => if (pressed) {
-                            running = false;
+                        c.SDLK_ESCAPE => if (!repeated) {
+                            input_state.set(.quit, pressed);
                         },
-                        c.SDLK_SPACE => if (pressed and !event.key.repeat) {
-                            input.pause_animation_pressed = true;
+                        c.SDLK_SPACE => if (!repeated) {
+                            input_state.set(.pause_animation, pressed);
                         },
-                        c.SDLK_R => if (pressed and !event.key.repeat) {
-                            input.reset_animation_pressed = true;
+                        c.SDLK_R => if (!repeated) {
+                            input_state.set(.reset_animation, pressed);
                         },
-                        c.SDLK_A, c.SDLK_LEFT => input.left = pressed,
-                        c.SDLK_D, c.SDLK_RIGHT => input.right = pressed,
-                        c.SDLK_W, c.SDLK_UP => input.up = pressed,
-                        c.SDLK_S, c.SDLK_DOWN => input.down = pressed,
-                        c.SDLK_Q => input.zoom_out = pressed,
-                        c.SDLK_E => input.zoom_in = pressed,
+                        c.SDLK_A, c.SDLK_LEFT => {
+                            input_state.set(.move_left, pressed);
+                        },
+                        c.SDLK_D, c.SDLK_RIGHT => {
+                            input_state.set(.move_right, pressed);
+                        },
+                        c.SDLK_W, c.SDLK_UP => {
+                            input_state.set(.move_up, pressed);
+                        },
+                        c.SDLK_S, c.SDLK_DOWN => {
+                            input_state.set(.move_down, pressed);
+                        },
+                        c.SDLK_Q => {
+                            input_state.set(.zoom_out, pressed);
+                        },
+                        c.SDLK_E => {
+                            input_state.set(.zoom_in, pressed);
+                        },
                         else => {},
                     }
                 },
 
                 else => {},
             }
+        }
+
+        if (input_state.wasPressed(.quit)) {
+            running = false;
         }
 
         // Delta time calculations
@@ -163,18 +160,7 @@ pub fn runHelloWindow() !void {
             std.log.info("frame dt: {d:.4}s", .{dt});
         }
 
-        const frame_input = demo.Input{
-            .move_x = input.axisX(),
-            .move_y = input.axisY(),
-            .zoom_in = input.zoom_in,
-            .zoom_out = input.zoom_out,
-            .pause_animation_pressed = input.pause_animation_pressed,
-            .reset_animation_pressed = input.reset_animation_pressed,
-        };
-
-        input.pause_animation_pressed = false;
-        input.reset_animation_pressed = false;
-
+        const frame_input = demo.Input.fromState(&input_state);
         demo_state.update(frame_input, dt_seconds);
 
         // Render frame

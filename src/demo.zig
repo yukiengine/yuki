@@ -1,5 +1,6 @@
 const std = @import("std");
 const render2d = @import("render2d/renderer.zig");
+const input = @import("input.zig");
 
 const layer_background: i32 = -10;
 const layer_world: i32 = 0;
@@ -13,6 +14,17 @@ pub const Input = struct {
     zoom_out: bool = false,
     pause_animation_pressed: bool = false,
     reset_animation_pressed: bool = false,
+
+    pub fn fromState(state: *const input.State) Input {
+        return .{
+            .move_x = state.axisX(),
+            .move_y = state.axisY(),
+            .zoom_in = state.isDown(.zoom_in),
+            .zoom_out = state.isDown(.zoom_out),
+            .pause_animation_pressed = state.wasPressed(.pause_animation),
+            .reset_animation_pressed = state.wasPressed(.reset_animation),
+        };
+    }
 };
 
 pub const Demo = struct {
@@ -30,21 +42,21 @@ pub const Demo = struct {
         };
     }
 
-    pub fn update(self: *Demo, input: Input, dt_seconds: f32) void {
+    pub fn update(self: *Demo, input_state: Input, dt_seconds: f32) void {
         const speed: f32 = 240.0;
-        self.x += @as(f32, @floatFromInt(input.move_x)) * speed * dt_seconds;
-        self.y += @as(f32, @floatFromInt(input.move_y)) * speed * dt_seconds;
+        self.x += @as(f32, @floatFromInt(input_state.move_x)) * speed * dt_seconds;
+        self.y += @as(f32, @floatFromInt(input_state.move_y)) * speed * dt_seconds;
 
-        if (input.pause_animation_pressed) self.animation_player.toggle();
-        if (input.reset_animation_pressed) self.animation_player.reset();
+        if (input_state.pause_animation_pressed) self.animation_player.toggle();
+        if (input_state.reset_animation_pressed) self.animation_player.reset();
         self.animation_player.update(dt_seconds);
 
         self.rotation += 2.0 * dt_seconds;
         if (self.rotation >= std.math.tau) self.rotation -= std.math.tau;
 
         const zoom_speed: f32 = 1.5;
-        if (input.zoom_in) self.camera_zoom += zoom_speed * dt_seconds;
-        if (input.zoom_out) self.camera_zoom -= zoom_speed * dt_seconds;
+        if (input_state.zoom_in) self.camera_zoom += zoom_speed * dt_seconds;
+        if (input_state.zoom_out) self.camera_zoom -= zoom_speed * dt_seconds;
         self.camera_zoom = @max(0.25, @min(4.0, self.camera_zoom));
     }
 
