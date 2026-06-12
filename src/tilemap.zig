@@ -86,7 +86,10 @@ pub const Tilemap = struct {
         std.debug.assert(height > 0);
         std.debug.assert(tile_size.x > 0.0);
         std.debug.assert(tile_size.y > 0.0);
-        std.debug.assert(tiles.len == @as(usize, @intCast(width * height)));
+
+        const expected_tile_count =
+            @as(usize, @intCast(width)) * @as(usize, @intCast(height));
+        std.debug.assert(tiles.len == expected_tile_count);
 
         return .{
             .width = width,
@@ -94,6 +97,11 @@ pub const Tilemap = struct {
             .tile_size = tile_size,
             .tiles = tiles,
         };
+    }
+
+    fn index(self: Tilemap, x: u32, y: u32) usize {
+        return @as(usize, @intCast(y)) * @as(usize, @intCast(self.width)) +
+            @as(usize, @intCast(x));
     }
 
     pub fn tileAt(self: Tilemap, x: u32, y: u32) Tile {
@@ -160,11 +168,143 @@ pub const Tilemap = struct {
                 self.tile_size.y * 0.5,
         );
     }
-
-    fn index(self: Tilemap, x: u32, y: u32) usize {
-        return @intCast(y * self.width + x);
-    }
 };
+
+pub fn StaticTilemap(comptime map_width: u32, comptime map_height: u32) type {
+    comptime {
+        if (map_width == 0) @compileError("StaticTilemap width must be greater than zero");
+        if (map_height == 0) @compileError("StaticTilemap height must be greater than zero");
+    }
+
+    const tile_count = @as(usize, map_width) * @as(usize, map_height);
+
+    return struct {
+        const Self = @This();
+
+        pub const width = map_width;
+        pub const height = map_height;
+
+        tiles: [tile_count]Tile,
+
+        pub fn empty() Self {
+            return .{
+                .tiles = [_]Tile{Tile.empty()} ** tile_count,
+            };
+        }
+
+        pub fn filled(tile: Tile) Self {
+            return .{
+                .tiles = [_]Tile{tile} ** tile_count,
+            };
+        }
+
+        pub fn view(self: *const Self, tile_size: render2d.Vector2) Tilemap {
+            return Tilemap.init(
+                map_width,
+                map_height,
+                tile_size,
+                self.tiles[0..],
+            );
+        }
+
+        pub fn items(self: *const Self) []const Tile {
+            return self.tiles[0..];
+        }
+
+        pub fn set(self: *Self, x: u32, y: u32, tile: Tile) void {
+            std.debug.assert(x < map_width);
+            std.debug.assert(y < map_height);
+
+            self.tiles[index(x, y)] = tile;
+        }
+
+        pub fn get(self: *const Self, x: u32, y: u32) Tile {
+            std.debug.assert(x < map_width);
+            std.debug.assert(y < map_height);
+
+            return self.tiles[index(x, y)];
+        }
+
+        pub fn fill(self: *Self, tile: Tile) void {
+            for (&self.tiles) |*slot| {
+                slot.* = tile;
+            }
+        }
+
+        pub fn clear(self: *Self) void {
+            self.fill(Tile.empty());
+        }
+
+        pub fn fillRect(
+            self: *Self,
+            x: u32,
+            y: u32,
+            rect_width: u32,
+            rect_height: u32,
+            tile: Tile,
+        ) void {
+            std.debug.assert(rect_width > 0);
+            std.debug.assert(rect_height > 0);
+            std.debug.assert(x < map_width);
+            std.debug.assert(y < map_height);
+            std.debug.assert(rect_width <= map_width - x);
+            std.debug.assert(rect_height <= map_height - y);
+
+            var tile_y = y;
+            while (tile_y < y + rect_height) : (tile_y += 1) {
+                var tile_x = x;
+                while (tile_x < x + rect_width) : (tile_x += 1) {
+                    self.set(tile_x, tile_y, tile);
+                }
+            }
+        }
+
+        pub fn clearRect(
+            self: *Self,
+            x: u32,
+            y: u32,
+            rect_width: u32,
+            rect_height: u32,
+        ) void {
+            self.fillRect(
+                x,
+                y,
+                rect_width,
+                rect_height,
+                Tile.empty(),
+            );
+        }
+
+        pub fn setBorder(self: *Self, tile: Tile) void {
+            var x: u32 = 0;
+            while (x < map_width) : (x += 1) {
+                self.set(x, 0, tile);
+                self.set(x, map_height - 1, tile);
+            }
+
+            var y: u32 = 0;
+            while (y < map_height) : (y += 1) {
+                self.set(0, y, tile);
+                self.set(map_width - 1, y, tile);
+            }
+        }
+
+        pub fn checker(self: *Self, first: Tile, second: Tile) void {
+            var y: u32 = 0;
+            while (y < map_height) : (y += 1) {
+                var x: u32 = 0;
+                while (x < map_width) : (x += 1) {
+                    const use_first = ((x + y) % 2) == 0;
+                    self.set(x, y, if (use_first) first else second);
+                }
+            }
+        }
+
+        fn index(x: u32, y: u32) usize {
+            return @as(usize, y) * @as(usize, map_width) + @as(usize, x);
+        }
+    };
+}
 
 test "tile atlas index uses zero as empty" {
     const empty = Tile.empty();
@@ -210,4 +350,49 @@ test "tilemap indexes rows" {
     try std.testing.expectEqual(@as(u16, 2), map.tileAt(1, 0).id);
     try std.testing.expectEqual(@as(u16, 0), map.tileAt(0, 1).id);
     try std.testing.expectEqual(@as(u16, 3), map.tileAt(1, 1).id);
+}
+
+test "static tilemap stores fixed tile data" {
+    var map = StaticTilemap(3, 2).empty();
+
+    map.set(1, 0, Tile.fromAtlasIndex(2));
+    map.set(2, 1, Tile.fromAtlasIndex(4));
+
+    try std.testing.expect(map.get(0, 0).isEmpty());
+    try std.testing.expectEqual(@as(u32, 2), map.get(1, 0).atlasIndex());
+    try std.testing.expectEqual(@as(u32, 4), map.get(2, 1).atlasIndex());
+}
+
+test "static tilemap can fill rectangles" {
+    var map = StaticTilemap(4, 3).empty();
+
+    map.fillRect(1, 1, 2, 1, Tile.fromAtlasIndex(0));
+
+    try std.testing.expect(map.get(0, 0).isEmpty());
+    try std.testing.expect(!map.get(1, 1).isEmpty());
+    try std.testing.expect(!map.get(2, 1).isEmpty());
+    try std.testing.expect(map.get(3, 1).isEmpty());
+}
+
+test "static tilemap border fills edges" {
+    var map = StaticTilemap(4, 3).empty();
+
+    map.setBorder(Tile.fromAtlasIndex(0));
+
+    try std.testing.expect(!map.get(0, 0).isEmpty());
+    try std.testing.expect(!map.get(3, 0).isEmpty());
+    try std.testing.expect(!map.get(0, 2).isEmpty());
+    try std.testing.expect(!map.get(3, 2).isEmpty());
+    try std.testing.expect(map.get(1, 1).isEmpty());
+}
+
+test "static tilemap creates a tilemap view" {
+    var storage = StaticTilemap(2, 2).empty();
+    storage.set(1, 1, Tile.fromAtlasIndex(3));
+
+    const view = storage.view(render2d.Vector2.xy(16.0, 16.0));
+
+    try std.testing.expectEqual(@as(u32, 2), view.width);
+    try std.testing.expectEqual(@as(u32, 2), view.height);
+    try std.testing.expectEqual(@as(u32, 3), view.tileAt(1, 1).atlasIndex());
 }
