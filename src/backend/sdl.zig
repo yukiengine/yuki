@@ -87,6 +87,9 @@ pub fn runHelloWindow() !void {
                         gpu.resize(@intCast(width_new), @intCast(height_new));
                     }
                 },
+                c.SDL_EVENT_WINDOW_FOCUS_LOST => {
+                    input_state.releaseAll();
+                },
                 c.SDL_EVENT_KEY_DOWN, c.SDL_EVENT_KEY_UP => {
                     const pressed = event.type == c.SDL_EVENT_KEY_DOWN;
                     const repeated = event.key.repeat;
