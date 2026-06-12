@@ -15,7 +15,7 @@ const GameState = struct {
     y: f32 = 0.0,
     rotation: f32 = 0.0,
     camera_zoom: f32 = 1.0,
-    animation_time: f32 = 0.0,
+    animation_player: render2d.AnimationPlayer,
 };
 
 /// Delta time
@@ -101,7 +101,9 @@ pub fn runHelloWindow() !void {
     var frame_index: u64 = 0;
 
     var input = Input{};
-    var game_state = GameState{};
+    var game_state = GameState{
+        .animation_player = render2d.AnimationPlayer.init(debug_animation),
+    };
 
     var world_draw_list = render2d.DrawList.init();
     var screen_draw_list = render2d.DrawList.init();
@@ -170,7 +172,7 @@ pub fn runHelloWindow() !void {
         }
 
         // Animations
-        game_state.animation_time += dt_seconds;
+        game_state.animation_player.update(dt_seconds);
 
         // Rotation
         const spin_speed: f32 = 2.0; // radians per second
@@ -228,7 +230,7 @@ pub fn runHelloWindow() !void {
                 render2d.Vector2.xy(80.0, 80.0),
                 game_state.rotation,
             ),
-            debug_animation.spriteAtTime(game_state.animation_time),
+            game_state.animation_player.sprite(),
             layer_player,
         );
 

@@ -387,3 +387,30 @@ pub const SpriteAnimation = struct {
         return self.atlas.spriteGrid(column, self.row, self.frame_width, self.frame_height);
     }
 };
+
+pub const AnimationPlayer = struct {
+    animation: SpriteAnimation,
+    elapsed_seconds: f32 = 0.0,
+    speed: f32 = 1.0,
+    playing: bool = true,
+
+    pub fn init(animation: SpriteAnimation) AnimationPlayer {
+        return .{
+            .animation = animation,
+        };
+    }
+
+    pub fn update(self: *AnimationPlayer, dt_seconds: f32) void {
+        if (!self.playing) return;
+
+        self.elapsed_seconds += dt_seconds * self.speed;
+    }
+
+    pub fn sprite(self: AnimationPlayer) Sprite {
+        return self.animation.spriteAtTime(self.elapsed_seconds);
+    }
+
+    pub fn reset(self: *AnimationPlayer) void {
+        self.elapsed_seconds = 0.0;
+    }
+};

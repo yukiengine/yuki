@@ -24,6 +24,7 @@ pub const Frame = types.Frame;
 pub const DrawList = types.DrawList;
 pub const TextureAtlas = types.TextureAtlas;
 pub const SpriteAnimation = types.SpriteAnimation;
+pub const AnimationPlayer = types.AnimationPlayer;
 
 pub const Error = types.DrawError || error{
     CreateShaderModuleFailed,
