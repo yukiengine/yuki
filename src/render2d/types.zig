@@ -346,3 +346,44 @@ pub const TextureAtlas = struct {
         );
     }
 };
+
+pub const SpriteAnimation = struct {
+    atlas: TextureAtlas,
+    start_column: u32,
+    row: u32,
+    frame_count: u32,
+    frame_width: u32,
+    frame_height: u32,
+    seconds_per_frame: f32,
+
+    pub fn init(
+        atlas: TextureAtlas,
+        start_column: u32,
+        row: u32,
+        frame_count: u32,
+        frame_width: u32,
+        frame_height: u32,
+        seconds_per_frame: f32,
+    ) SpriteAnimation {
+        std.debug.assert(frame_count > 0);
+        std.debug.assert(seconds_per_frame > 0.0);
+
+        return .{
+            .atlas = atlas,
+            .start_column = start_column,
+            .row = row,
+            .frame_count = frame_count,
+            .frame_width = frame_width,
+            .frame_height = frame_height,
+            .seconds_per_frame = seconds_per_frame,
+        };
+    }
+
+    pub fn spriteAtTime(self: SpriteAnimation, elapsed_seconds: f32) Sprite {
+        const frame_float = elapsed_seconds / self.seconds_per_frame;
+        const frame_index: u32 = @intFromFloat(@floor(frame_float));
+        const column = self.start_column + frame_index % self.frame_count;
+
+        return self.atlas.spriteGrid(column, self.row, self.frame_width, self.frame_height);
+    }
+};

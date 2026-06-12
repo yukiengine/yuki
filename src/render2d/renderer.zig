@@ -23,6 +23,7 @@ pub const Camera2D = types.Camera2D;
 pub const Frame = types.Frame;
 pub const DrawList = types.DrawList;
 pub const TextureAtlas = types.TextureAtlas;
+pub const SpriteAnimation = types.SpriteAnimation;
 
 pub const Error = types.DrawError || error{
     CreateShaderModuleFailed,
@@ -214,6 +215,7 @@ pub const Renderer2D = struct {
         self.quad_count += 1;
     }
 
+    /// Converts queued quads from world space into clip-space vertices.
     fn buildQuadVertices(self: *Renderer2D, surface_width: u32, surface_height: u32, camera: Camera2D) usize {
         var vertex_count: usize = 0;
 
@@ -345,7 +347,6 @@ pub const Renderer2D = struct {
     }
 };
 
-/// Converts queued quads from world space into clip-space vertices.
 fn createQuadPipeline(device: c.WGPUDevice, format: c.WGPUTextureFormat, texture_bind_group_layout: c.WGPUBindGroupLayout) !c.WGPURenderPipeline {
     var wgsl_source: c.WGPUShaderSourceWGSL = std.mem.zeroes(c.WGPUShaderSourceWGSL);
     wgsl_source.chain.sType = c.WGPUSType_ShaderSourceWGSL;
@@ -565,20 +566,6 @@ fn createTextureBindGroup(
     return c.wgpuDeviceCreateBindGroup(device, &desc) orelse
         Error.CreateBindGroupFailed;
 }
-
-// fn createCheckerTexture(
-//     device: c.WGPUDevice,
-//     queue: c.WGPUQueue,
-//     bind_group_layout: c.WGPUBindGroupLayout,
-//     sampler: c.WGPUSampler,
-// ) !Texture2D {
-//     const pixels = [_]u8{
-//         255, 255, 255, 255, 32,  32,  32,  255,
-//         32,  32,  32,  255, 255, 255, 255, 255,
-//     };
-//
-//     return createTexture2DFromRgbaPixels(device, queue, bind_group_layout, sampler, "checker texture", 2, 2, pixels[0..]);
-// }
 
 fn createWhiteTexture(
     device: c.WGPUDevice,

@@ -15,6 +15,7 @@ const GameState = struct {
     y: f32 = 0.0,
     rotation: f32 = 0.0,
     camera_zoom: f32 = 1.0,
+    animation_time: f32 = 0.0,
 };
 
 /// Delta time
@@ -94,6 +95,7 @@ pub fn runHelloWindow() !void {
 
     const debug_texture = try gpu.createTextureFromRgbaPixels("debug texture", 2, 2, debug_pixels[0..]);
     const debug_atlas = render2d.TextureAtlas.init(debug_texture, 2, 2);
+    const debug_animation = render2d.SpriteAnimation.init(debug_atlas, 0, 0, 2, 1, 1, 0.2);
 
     var clock = FrameClock.init();
     var frame_index: u64 = 0;
@@ -167,6 +169,9 @@ pub fn runHelloWindow() !void {
             std.log.info("position: {d}, {d}", .{ game_state.x, game_state.y });
         }
 
+        // Animations
+        game_state.animation_time += dt_seconds;
+
         // Rotation
         const spin_speed: f32 = 2.0; // radians per second
         game_state.rotation += spin_speed * dt_seconds;
@@ -223,7 +228,7 @@ pub fn runHelloWindow() !void {
                 render2d.Vector2.xy(80.0, 80.0),
                 game_state.rotation,
             ),
-            debug_atlas.spritePixels(1, 0, 1, 1),
+            debug_animation.spriteAtTime(game_state.animation_time),
             layer_player,
         );
 
