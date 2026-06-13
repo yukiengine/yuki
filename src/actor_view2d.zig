@@ -1,5 +1,5 @@
 const std = @import("std");
-const render2d = @import("render2d/renderer.zig");
+const render2d = @import("render2d.zig");
 const world2d = @import("world2d.zig");
 
 /// Maximum actor snapshots that can be collected in one query.

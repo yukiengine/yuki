@@ -1,10 +1,12 @@
 const std = @import("std");
-const render2d = @import("render2d/renderer.zig");
-const input = @import("input.zig");
-const tilemap = @import("tilemap.zig");
-const debug_draw = @import("debug_draw.zig");
-const scene2d = @import("scene2d.zig");
-const camera2d = @import("camera2d.zig");
+const yuki2d = @import("yuki2d.zig");
+
+const render2d = yuki2d.render;
+const input = yuki2d.input;
+const tilemap = yuki2d.tilemap;
+const debug_draw = yuki2d.debug_draw;
+const scene2d = yuki2d.scene;
+const camera2d = yuki2d.camera;
 
 const layer_background: i32 = -20;
 const layer_tilemap: i32 = -10;

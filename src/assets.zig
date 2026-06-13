@@ -1,7 +1,7 @@
 const std = @import("std");
 const wgpu = @import("backend/wgpu.zig");
 const c = @import("backend/sdl_c.zig").c;
-const render2d = @import("render2d/renderer.zig");
+const render2d = @import("render2d.zig");
 
 pub const max_texture_assets = 32;
 

@@ -1,9 +1,11 @@
-const assets = @import("assets.zig");
 const demo = @import("demo.zig");
-const input = @import("input.zig");
-const render2d = @import("render2d/renderer.zig");
+const yuki2d = @import("yuki2d.zig");
 const wgpu = @import("backend/wgpu.zig");
-const camera2d = @import("camera2d.zig");
+
+const assets = yuki2d.assets;
+const input = yuki2d.input;
+const render2d = yuki2d.render;
+const camera2d = yuki2d.camera;
 
 pub const AppConfig = struct {
     player_texture_path: [:0]const u8 = "assets/player.bmp",

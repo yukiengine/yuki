@@ -1,5 +1,5 @@
 const std = @import("std");
-const render2d = @import("render2d/renderer.zig");
+const render2d = @import("render2d.zig");
 
 /// Debug draw helper
 pub const DebugDraw = struct {

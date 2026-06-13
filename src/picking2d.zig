@@ -1,6 +1,6 @@
 const std = @import("std");
 const actor_view2d = @import("actor_view2d.zig");
-const render2d = @import("render2d/renderer.zig");
+const render2d = @import("render2d.zig");
 const world2d = @import("world2d.zig");
 
 /// Maximum actor pick hits stored by one point query.

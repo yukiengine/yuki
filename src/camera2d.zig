@@ -1,5 +1,5 @@
 const std = @import("std");
-const render2d = @import("render2d/renderer.zig");
+const render2d = @import("render2d.zig");
 
 /// Public vector type used by the 2D camera helpers.
 pub const Vector2 = render2d.Vector2;

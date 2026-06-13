@@ -1,4 +1,6 @@
 test {
+    _ = @import("render2d.zig");
+    _ = @import("yuki2d.zig");
     _ = @import("commands2d.zig");
     _ = @import("events2d.zig");
     _ = @import("input.zig");

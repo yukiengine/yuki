@@ -1,5 +1,5 @@
 const std = @import("std");
-const render2d = @import("render2d/renderer.zig");
+const render2d = @import("render2d.zig");
 const tilemap = @import("tilemap.zig");
 
 /// Maximum number of actors stored in one 2D world.
