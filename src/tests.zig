@@ -17,5 +17,6 @@ test {
     _ = @import("overlaps2d.zig");
     _ = @import("actor_view2d.zig");
     _ = @import("camera2d.zig");
+    _ = @import("camera2d_tests.zig");
     _ = @import("picking2d.zig");
 }
