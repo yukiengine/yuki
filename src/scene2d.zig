@@ -48,6 +48,45 @@ pub const Event = events2d.Event;
 /// Public 2D scene event queue.
 pub const EventQueue = events2d.EventQueue;
 
+/// Counts frame-local scene queues.
+pub const FrameQueues = struct {
+    event_count: usize = 0,
+    command_count: usize = 0,
+
+    /// Creates frame queue counts from event and command totals.
+    pub fn init(event_count: usize, command_count: usize) FrameQueues {
+        return .{
+            .event_count = event_count,
+            .command_count = command_count,
+        };
+    }
+
+    /// Returns empty frame queue counts.
+    pub fn empty() FrameQueues {
+        return .{};
+    }
+
+    /// Returns true when there are queued events.
+    pub fn hasEvents(self: FrameQueues) bool {
+        return self.event_count != 0;
+    }
+
+    /// Returns true when there are queued commands.
+    pub fn hasCommands(self: FrameQueues) bool {
+        return self.command_count != 0;
+    }
+
+    /// Returns true when either queue has pending work.
+    pub fn hasWork(self: FrameQueues) bool {
+        return self.hasEvents() or self.hasCommands();
+    }
+
+    /// Returns true when both queues are empty.
+    pub fn isEmpty(self: FrameQueues) bool {
+        return !self.hasWork();
+    }
+};
+
 /// Scene-level errors.
 pub const Error = prefab2d.Error || events2d.Error || commands2d.Error;
 
@@ -66,6 +105,35 @@ pub const Scene = struct {
             .events = EventQueue.init(),
             .commands = CommandQueue.init(),
         };
+    }
+
+    /// Starts a new scene frame by clearing frame-local queues.
+    pub fn beginFrame(self: *Scene) void {
+        self.clearEvents();
+        self.clearCommands();
+    }
+
+    /// Finishes a scene frame by applying deferred commands.
+    pub fn finishFrame(self: *Scene) void {
+        self.applyCommands();
+    }
+
+    /// Returns current frame-local event and command counts.
+    pub fn frameQueues(self: *const Scene) FrameQueues {
+        return FrameQueues.init(
+            self.events.count(),
+            self.commands.count(),
+        );
+    }
+
+    /// Returns true when the current frame has queued events.
+    pub fn hasFrameEvents(self: *const Scene) bool {
+        return !self.events.isEmpty();
+    }
+
+    /// Returns true when the current frame has queued commands.
+    pub fn hasQueuedCommands(self: *const Scene) bool {
+        return !self.commands.isEmpty();
     }
 
     /// Registers a prefab and returns its handle.
@@ -876,4 +944,155 @@ test "scene applies queued despawn command" {
 
     try std.testing.expect(scene.actorConst(actor_id) == null);
     try std.testing.expectEqual(@as(usize, 0), scene.commandItems().len);
+}
+
+test "scene frame queues start empty" {
+    var scene = Scene.init();
+
+    const queues = scene.frameQueues();
+
+    try std.testing.expect(queues.isEmpty());
+    try std.testing.expect(!queues.hasEvents());
+    try std.testing.expect(!queues.hasCommands());
+    try std.testing.expect(!queues.hasWork());
+    try std.testing.expectEqual(@as(usize, 0), queues.event_count);
+    try std.testing.expectEqual(@as(usize, 0), queues.command_count);
+}
+
+test "scene begin frame clears events and commands" {
+    const player_tag = ActorTag.fromIndex(40);
+    const marker_tag = ActorTag.fromIndex(41);
+
+    var scene = Scene.init();
+
+    const player_prefab = try scene.registerPrefab(.{
+        .name = "frame.player",
+        .size = render2d.Vector2.xy(16.0, 16.0),
+        .tag = player_tag,
+    });
+
+    const marker_prefab = try scene.registerPrefab(.{
+        .name = "frame.marker",
+        .size = render2d.Vector2.xy(16.0, 16.0),
+        .tag = marker_tag,
+    });
+
+    const player = try scene.spawn(player_prefab, .{
+        .position = render2d.Vector2.xy(0.0, 0.0),
+    });
+
+    const marker = try scene.spawn(marker_prefab, .{
+        .position = render2d.Vector2.xy(4.0, 0.0),
+    });
+
+    _ = try scene.emitActorOverlaps(player, marker_tag);
+    try scene.queueMoveActor(marker, render2d.Vector2.xy(8.0, 0.0));
+
+    const before = scene.frameQueues();
+
+    try std.testing.expect(before.hasEvents());
+    try std.testing.expect(before.hasCommands());
+    try std.testing.expect(before.hasWork());
+    try std.testing.expectEqual(@as(usize, 1), before.event_count);
+    try std.testing.expectEqual(@as(usize, 1), before.command_count);
+
+    scene.beginFrame();
+
+    const after = scene.frameQueues();
+
+    try std.testing.expect(after.isEmpty());
+    try std.testing.expectEqual(@as(usize, 0), scene.eventItems().len);
+    try std.testing.expectEqual(@as(usize, 0), scene.commandItems().len);
+}
+
+test "scene finish frame applies queued movement" {
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "finish.actor",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+    });
+
+    const actor_id = try scene.spawn(prefab_id, .{
+        .position = render2d.Vector2.xy(10.0, 20.0),
+    });
+
+    try scene.queueMoveActor(actor_id, render2d.Vector2.xy(5.0, -3.0));
+
+    try std.testing.expect(scene.hasQueuedCommands());
+    try std.testing.expectEqual(@as(usize, 1), scene.frameQueues().command_count);
+
+    scene.finishFrame();
+
+    const actor_data = scene.actorConst(actor_id).?;
+
+    try std.testing.expectEqual(@as(f32, 15.0), actor_data.position.x);
+    try std.testing.expectEqual(@as(f32, 17.0), actor_data.position.y);
+    try std.testing.expect(!scene.hasQueuedCommands());
+    try std.testing.expectEqual(@as(usize, 0), scene.commandItems().len);
+}
+
+test "scene finish frame applies queued position replacement" {
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "position.actor",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+    });
+
+    const actor_id = try scene.spawn(prefab_id, .{
+        .position = render2d.Vector2.xy(1.0, 2.0),
+    });
+
+    try scene.queueSetActorPosition(
+        actor_id,
+        render2d.Vector2.xy(100.0, 200.0),
+    );
+
+    scene.finishFrame();
+
+    const actor_data = scene.actorConst(actor_id).?;
+
+    try std.testing.expectEqual(@as(f32, 100.0), actor_data.position.x);
+    try std.testing.expectEqual(@as(f32, 200.0), actor_data.position.y);
+}
+
+test "scene finish frame applies queued velocity replacement" {
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "velocity.actor",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+    });
+
+    const actor_id = try scene.spawn(prefab_id, .{});
+
+    try scene.queueSetActorVelocity(
+        actor_id,
+        render2d.Vector2.xy(30.0, -12.0),
+    );
+
+    scene.finishFrame();
+
+    const actor_data = scene.actorConst(actor_id).?;
+
+    try std.testing.expectEqual(@as(f32, 30.0), actor_data.velocity.x);
+    try std.testing.expectEqual(@as(f32, -12.0), actor_data.velocity.y);
+}
+
+test "scene finish frame applies queued despawn" {
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "despawn.frame.actor",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+    });
+
+    const actor_id = try scene.spawn(prefab_id, .{});
+
+    try scene.queueDespawnActor(actor_id);
+    scene.finishFrame();
+
+    try std.testing.expect(scene.actorConst(actor_id) == null);
+    try std.testing.expect(scene.frameQueues().isEmpty());
 }

@@ -173,7 +173,7 @@ pub const Demo = struct {
 
     /// Advances demo simulation for one frame.
     pub fn update(self: *Demo, input_state: Input, dt_seconds: f32) void {
-        self.scene.clearEvents();
+        self.scene.beginFrame();
 
         if (input_state.toggle_debug_pressed) {
             self.show_collision_debug = !self.show_collision_debug;
@@ -205,7 +205,7 @@ pub const Demo = struct {
 
         _ = self.scene.emitActorOverlaps(self.player, tag_marker) catch unreachable;
         self.handleSceneEvents(dt_seconds);
-        self.scene.applyCommands();
+        self.scene.finishFrame();
 
         const zoom_speed: f32 = 1.5;
         if (input_state.zoom_in) self.camera_zoom += zoom_speed * dt_seconds;

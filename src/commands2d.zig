@@ -139,6 +139,11 @@ pub const CommandQueue = struct {
     pub fn isEmpty(self: *const CommandQueue) bool {
         return self.command_count == 0;
     }
+
+    /// Returns the number of queued commands.
+    pub fn count(self: *const CommandQueue) usize {
+        return self.command_count;
+    }
 };
 
 test "command queue stores movement commands" {

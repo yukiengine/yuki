@@ -101,13 +101,13 @@ pub const EventQueue = struct {
 
     /// Counts events of a specific kind.
     pub fn countKind(self: *const EventQueue, kind: EventKind) usize {
-        var count: usize = 0;
+        var count_kind: usize = 0;
 
         for (self.items()) |event| {
-            if (event.kind == kind) count += 1;
+            if (event.kind == kind) count_kind += 1;
         }
 
-        return count;
+        return count_kind;
     }
 
     /// Returns the first event of a specific kind.
@@ -117,6 +117,11 @@ pub const EventQueue = struct {
         }
 
         return null;
+    }
+
+    /// Returns the number of queued events.
+    pub fn count(self: *const EventQueue) usize {
+        return self.event_count;
     }
 };
 
