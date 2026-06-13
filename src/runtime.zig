@@ -100,7 +100,7 @@ pub const App = struct {
     }
 
     pub fn render(self: *App, gpu: *wgpu.Gpu) !void {
-        const camera = self.demo_state.camera();
+        const camera = self.demo_state.cameraForSurface(gpu.width, gpu.height);
         const visible_world = camera.visibleWorldRect(gpu.width, gpu.height);
 
         try self.demo_state.draw(

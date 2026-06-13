@@ -4,6 +4,7 @@ const input = @import("input.zig");
 const tilemap = @import("tilemap.zig");
 const debug_draw = @import("debug_draw.zig");
 const scene2d = @import("scene2d.zig");
+const camera2d = @import("camera2d.zig");
 
 const layer_background: i32 = -20;
 const layer_tilemap: i32 = -10;
@@ -128,7 +129,7 @@ pub const Input = struct {
 pub const Demo = struct {
     scene: scene2d.Scene,
     player: scene2d.ActorId,
-    camera_zoom: f32 = 1.0,
+    camera_rig: camera2d.CameraRig2D,
     tile_storage: DemoTilemap,
     tile_rules: tilemap.TileRules,
     tileset: tilemap.Tileset,
@@ -162,10 +163,24 @@ pub const Demo = struct {
             .position = render2d.Vector2.xy(-96.0, 0.0),
         }) catch unreachable;
 
+        const tile_storage = buildDemoMap();
+        const map_bounds = tile_storage
+            .view(demo_tile_size)
+            .worldBounds(demo_map_origin);
+
+        const camera_rig = camera2d.CameraRig2D
+            .init(render2d.Vector2.xy(0.0, 0.0))
+            .withConfig(camera2d.CameraRigConfig.default()
+            .withSmoothing(10.0)
+            .withSnapDistance(0.001)
+            .withZoomRange(camera2d.ZoomRange.init(0.25, 4.0))
+            .withBounds(map_bounds));
+
         return .{
             .scene = scene,
             .player = player,
-            .tile_storage = buildDemoMap(),
+            .tile_storage = tile_storage,
+            .camera_rig = camera_rig,
             .tile_rules = buildTileRules(),
             .tileset = tilemap.Tileset.init(debug_atlas, 1, 1),
         };
@@ -210,20 +225,29 @@ pub const Demo = struct {
         self.handleSceneEvents(dt_seconds);
         self.scene.finishFrame();
 
+        if (self.scene.actorSnapshot(self.player)) |player| {
+            self.camera_rig.follow(player.position);
+        }
+
         const zoom_speed: f32 = 1.5;
-        if (input_state.zoom_in) self.camera_zoom += zoom_speed * dt_seconds;
-        if (input_state.zoom_out) self.camera_zoom -= zoom_speed * dt_seconds;
-        self.camera_zoom = @max(0.25, @min(4.0, self.camera_zoom));
+        if (input_state.zoom_in) self.camera_rig.zoomTargetBy(zoom_speed * dt_seconds);
+        if (input_state.zoom_out) self.camera_rig.zoomTargetBy(-zoom_speed * dt_seconds);
+
+        self.camera_rig.update(dt_seconds);
     }
 
-    /// Returns a camera that follows the player actor.
+    /// Returns the current unclamped camera.
     pub fn camera(self: Demo) render2d.Camera2D {
-        const position = if (self.scene.actorSnapshot(self.player)) |player|
-            player.position
-        else
-            render2d.Vector2.xy(0.0, 0.0);
+        return self.camera_rig.camera();
+    }
 
-        return render2d.Camera2D.init(position, self.camera_zoom);
+    /// Returns the current camera clamped for the render surface.
+    pub fn cameraForSurface(
+        self: Demo,
+        surface_width: u32,
+        surface_height: u32,
+    ) render2d.Camera2D {
+        return self.camera_rig.cameraForSurface(surface_width, surface_height);
     }
 
     pub fn draw(

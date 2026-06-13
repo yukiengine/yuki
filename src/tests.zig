@@ -10,4 +10,5 @@ test {
     _ = @import("event_reader2d.zig");
     _ = @import("overlaps2d.zig");
     _ = @import("actor_view2d.zig");
+    _ = @import("camera2d.zig");
 }
