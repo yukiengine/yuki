@@ -7,6 +7,7 @@ const events2d = @import("events2d.zig");
 const commands2d = @import("commands2d.zig");
 const overlaps2d = @import("overlaps2d.zig");
 const event_reader2d = @import("event_reader2d.zig");
+const actor_view2d = @import("actor_view2d.zig");
 
 /// Public 2D scene command.
 pub const Command = commands2d.Command;
@@ -59,7 +60,17 @@ pub const EventReader = event_reader2d.EventReader;
 /// Public actor-overlap event filter.
 pub const ActorOverlapFilter = event_reader2d.ActorOverlapFilter;
 
-pub const Error = prefab2d.Error || events2d.Error || commands2d.Error || overlaps2d.Error;
+/// Public read-only actor snapshot.
+pub const ActorSnapshot = actor_view2d.ActorSnapshot;
+
+/// Public actor snapshot filter.
+pub const ActorSnapshotFilter = actor_view2d.ActorSnapshotFilter;
+
+/// Public bounded actor snapshot list.
+pub const ActorSnapshotList = actor_view2d.ActorSnapshotList;
+
+pub const Error = prefab2d.Error || events2d.Error || commands2d.Error ||
+    overlaps2d.Error || actor_view2d.Error;
 
 /// Counts frame-local scene queues.
 pub const FrameQueues = struct {
@@ -209,6 +220,56 @@ pub const Scene = struct {
     /// Returns a const actor pointer for a valid handle.
     pub fn actorConst(self: *const Scene, id: ActorId) ?*const Actor {
         return self.world.getConst(id);
+    }
+
+    /// Returns a read-only value snapshot for a valid actor handle.
+    pub fn actorSnapshot(self: *const Scene, id: ActorId) ?ActorSnapshot {
+        const actor_data = self.actorConst(id) orelse return null;
+        return ActorSnapshot.fromActor(id, actor_data);
+    }
+
+    /// Returns the first actor snapshot matching a filter.
+    pub fn firstActorSnapshot(self: *const Scene, filter: ActorSnapshotFilter) ?ActorSnapshot {
+        var index: usize = 0;
+
+        while (index < world2d.max_actors) : (index += 1) {
+            const actor_data = &self.world.actors[index];
+            if (!actor_data.active) continue;
+
+            const id = ActorId{
+                .index = @intCast(index),
+                .generation = actor_data.generation,
+            };
+
+            const snapshot = ActorSnapshot.fromActor(id, actor_data);
+            if (filter.matches(snapshot)) return snapshot;
+        }
+
+        return null;
+    }
+
+    /// Writes actor snapshots matching a filter into a bounded result list.
+    pub fn collectActorSnapshots(
+        self: *const Scene,
+        filter: ActorSnapshotFilter,
+        result: *ActorSnapshotList,
+    ) !void {
+        var index: usize = 0;
+
+        while (index < world2d.max_actors) : (index += 1) {
+            const actor_data = &self.world.actors[index];
+            if (!actor_data.active) continue;
+
+            const id = ActorId{
+                .index = @intCast(index),
+                .generation = actor_data.generation,
+            };
+
+            const snapshot = ActorSnapshot.fromActor(id, actor_data);
+            if (!filter.matches(snapshot)) continue;
+
+            try result.add(snapshot);
+        }
     }
 
     /// Sets an actor velocity.
@@ -1146,4 +1207,122 @@ test "scene finish frame applies queued despawn" {
 
     try std.testing.expect(scene.actorConst(actor_id) == null);
     try std.testing.expect(scene.frameQueues().isEmpty());
+}
+
+test "scene returns actor snapshots" {
+    const player_tag = ActorTag.fromIndex(90);
+
+    var scene = Scene.init();
+
+    const player_prefab = try scene.registerPrefab(.{
+        .name = "snapshot.player",
+        .size = render2d.Vector2.xy(16.0, 24.0),
+        .tag = player_tag,
+        .layer = 8,
+    });
+
+    const player = try scene.spawn(player_prefab, .{
+        .position = render2d.Vector2.xy(10.0, 20.0),
+    });
+
+    scene.setVelocity(player, render2d.Vector2.xy(3.0, -4.0));
+
+    const snapshot = scene.actorSnapshot(player) orelse return error.ExpectedSnapshot;
+
+    try std.testing.expect(snapshot.id.eql(player));
+    try std.testing.expect(snapshot.hasTag(player_tag));
+    try std.testing.expectEqual(@as(f32, 10.0), snapshot.position.x);
+    try std.testing.expectEqual(@as(f32, 20.0), snapshot.position.y);
+    try std.testing.expectEqual(@as(f32, 16.0), snapshot.size.x);
+    try std.testing.expectEqual(@as(f32, 24.0), snapshot.size.y);
+    try std.testing.expectEqual(@as(f32, 3.0), snapshot.velocity.x);
+    try std.testing.expectEqual(@as(f32, -4.0), snapshot.velocity.y);
+    try std.testing.expectEqual(@as(i32, 8), snapshot.layer);
+}
+
+test "scene collects actor snapshots by tag and rect" {
+    const marker_tag = ActorTag.fromIndex(91);
+    const enemy_tag = ActorTag.fromIndex(92);
+
+    var scene = Scene.init();
+
+    const marker_prefab = try scene.registerPrefab(.{
+        .name = "snapshot.marker",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = marker_tag,
+    });
+
+    const enemy_prefab = try scene.registerPrefab(.{
+        .name = "snapshot.enemy",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = enemy_tag,
+    });
+
+    _ = try scene.spawn(marker_prefab, .{
+        .position = render2d.Vector2.xy(0.0, 0.0),
+    });
+
+    _ = try scene.spawn(marker_prefab, .{
+        .position = render2d.Vector2.xy(10.0, 0.0),
+    });
+
+    _ = try scene.spawn(marker_prefab, .{
+        .position = render2d.Vector2.xy(100.0, 0.0),
+    });
+
+    _ = try scene.spawn(enemy_prefab, .{
+        .position = render2d.Vector2.xy(0.0, 0.0),
+    });
+
+    var snapshots = ActorSnapshotList.init();
+
+    try scene.collectActorSnapshots(
+        ActorSnapshotFilter
+            .all()
+            .withTag(marker_tag)
+            .inRect(render2d.Rect2D.fromCenterSize(
+            render2d.Vector2.xy(5.0, 0.0),
+            render2d.Vector2.xy(32.0, 16.0),
+        )),
+        &snapshots,
+    );
+
+    try std.testing.expectEqual(@as(usize, 2), snapshots.count());
+    try std.testing.expectEqual(@as(usize, 2), snapshots.countByTag(marker_tag));
+    try std.testing.expectEqual(@as(usize, 0), snapshots.countByTag(enemy_tag));
+}
+
+test "scene actor snapshot filter can exclude actor" {
+    const actor_tag = ActorTag.fromIndex(93);
+
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "snapshot.exclude",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = actor_tag,
+    });
+
+    const first = try scene.spawn(prefab_id, .{
+        .position = render2d.Vector2.xy(0.0, 0.0),
+    });
+
+    const second = try scene.spawn(prefab_id, .{
+        .position = render2d.Vector2.xy(10.0, 0.0),
+    });
+
+    var snapshots = ActorSnapshotList.init();
+
+    try scene.collectActorSnapshots(
+        ActorSnapshotFilter
+            .all()
+            .withTag(actor_tag)
+            .withoutActor(first),
+        &snapshots,
+    );
+
+    try std.testing.expectEqual(@as(usize, 1), snapshots.count());
+
+    const only = snapshots.first() orelse return error.ExpectedSnapshot;
+    try std.testing.expect(only.id.eql(second));
 }

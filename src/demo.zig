@@ -215,7 +215,7 @@ pub const Demo = struct {
 
     /// Returns a camera that follows the player actor.
     pub fn camera(self: Demo) render2d.Camera2D {
-        const position = if (self.scene.actorConst(self.player)) |player|
+        const position = if (self.scene.actorSnapshot(self.player)) |player|
             player.position
         else
             render2d.Vector2.xy(0.0, 0.0);
@@ -268,7 +268,7 @@ pub const Demo = struct {
         visible_world: render2d.Rect2D,
     ) !void {
         const player_id = self.scene.findFirstByTag(tag_player) orelse return;
-        const player = self.scene.actorConst(player_id) orelse return;
+        const player = self.scene.actorSnapshot(player_id) orelse return;
 
         const debug = debug_draw.DebugDraw
             .init(world, layer_debug)
@@ -296,18 +296,19 @@ pub const Demo = struct {
             }
         }
 
-        var marker_hits = scene2d.ActorQueryResult.init();
+        var marker_snapshots = scene2d.ActorSnapshotList.init();
 
-        try self.scene.collectActorsInRect(
-            scene2d.ActorQuery
-                .all(visible_world)
-                .withTag(tag_marker),
-            &marker_hits,
+        try self.scene.collectActorSnapshots(
+            scene2d.ActorSnapshotFilter
+                .all()
+                .withTag(tag_marker)
+                .inRect(visible_world),
+            &marker_snapshots,
         );
 
-        for (marker_hits.items()) |hit| {
+        for (marker_snapshots.items()) |marker| {
             try debug.rectOutline(
-                hit.bounds,
+                marker.bounds,
                 debug_marker_color,
             );
         }
@@ -321,7 +322,7 @@ pub const Demo = struct {
             if (!filter.matches(event)) continue;
 
             const overlap = event.actorOverlapOrNull() orelse continue;
-            const other = self.scene.actorConst(overlap.other) orelse continue;
+            const other = self.scene.actorSnapshot(overlap.other) orelse continue;
 
             try debug.cross(
                 other.position,
@@ -331,7 +332,7 @@ pub const Demo = struct {
         }
 
         try debug.rectOutline(
-            player.bounds(),
+            player.bounds,
             debug_player_color,
         );
 
