@@ -69,6 +69,9 @@ pub const ActorSnapshotFilter = actor_view2d.ActorSnapshotFilter;
 /// Public bounded actor snapshot list.
 pub const ActorSnapshotList = actor_view2d.ActorSnapshotList;
 
+/// Filter used by scene event readers for actor lifecycle events.
+pub const ActorLifecycleFilter = event_reader2d.ActorLifecycleFilter;
+
 pub const Error = prefab2d.Error || events2d.Error || commands2d.Error ||
     overlaps2d.Error || actor_view2d.Error;
 
@@ -181,34 +184,40 @@ pub const Scene = struct {
         return self.prefabs.get(id);
     }
 
-    /// Spawns an actor from a prefab handle.
-    pub fn spawn(
-        self: *Scene,
-        prefab_id: PrefabId,
-        spawn_override: SpawnOverride,
-    ) !ActorId {
-        return try self.prefabs.spawn(
+    /// Spawns an actor from a prefab handle and emits an actor-spawned event.
+    pub fn spawn(self: *Scene, prefab_id: PrefabId, spawn_override: SpawnOverride) !ActorId {
+        const actor_id = try self.prefabs.spawn(
             prefab_id,
             &self.world,
             spawn_override,
         );
+
+        const actor_data = self.actorConst(actor_id) orelse unreachable;
+        try self.events.pushActorSpawned(actor_id, actor_data.tag);
+
+        return actor_id;
     }
 
-    /// Spawns an actor from a prefab name.
-    pub fn spawnByName(
-        self: *Scene,
-        name: []const u8,
-        spawn_override: SpawnOverride,
-    ) !ActorId {
-        return try self.prefabs.spawnByName(
+    /// Spawns an actor from a prefab name and emits an actor-spawned event.
+    pub fn spawnByName(self: *Scene, name: []const u8, spawn_override: SpawnOverride) !ActorId {
+        const actor_id = try self.prefabs.spawnByName(
             name,
             &self.world,
             spawn_override,
         );
+
+        const actor_data = self.actorConst(actor_id) orelse unreachable;
+        try self.events.pushActorSpawned(actor_id, actor_data.tag);
+
+        return actor_id;
     }
 
-    /// Despawns an actor and invalidates its handle.
+    /// Despawns an actor and emits an actor-despawned event.
     pub fn despawn(self: *Scene, id: ActorId) void {
+        if (self.actorConst(id)) |actor_data| {
+            self.events.pushActorDespawned(id, actor_data.tag) catch unreachable;
+        }
+
         self.world.despawn(id);
     }
 
@@ -376,6 +385,8 @@ pub const Scene = struct {
     }
 
     /// Removes all actors while keeping registered prefabs.
+    /// Calls world.despawn directly, so this doesn't emit despawn lifecycle events.
+    /// TODO: Make behavior explicit
     pub fn clearActors(self: *Scene) void {
         var index: usize = 0;
         while (index < world2d.max_actors) : (index += 1) {
@@ -406,6 +417,8 @@ pub const Scene = struct {
     }
 
     /// Despawns all live actors with a tag.
+    /// Calls world.despawn directly, so this doesn't emit despawn lifecycle events.
+    /// TODO: Make behavior explicit
     pub fn despawnByTag(self: *Scene, tag: ActorTag) usize {
         return self.world.despawnByTag(tag);
     }
@@ -1034,6 +1047,8 @@ test "scene emits first actor overlap event" {
         .position = render2d.Vector2.xy(4.0, 0.0),
     });
 
+    scene.beginFrame();
+
     try std.testing.expect(try scene.emitFirstActorOverlap(player, pickup_tag));
     try std.testing.expectEqual(@as(usize, 1), scene.eventItems().len);
 
@@ -1073,6 +1088,8 @@ test "scene emits all actor overlap events" {
     _ = try scene.spawn(marker_prefab, .{
         .position = render2d.Vector2.xy(-4.0, 0.0),
     });
+
+    scene.beginFrame();
 
     const emitted = try scene.emitActorOverlaps(player, marker_tag);
 
@@ -1204,6 +1221,8 @@ test "scene begin frame clears events and commands" {
         .position = render2d.Vector2.xy(4.0, 0.0),
     });
 
+    scene.beginFrame();
+
     _ = try scene.emitActorOverlaps(player, marker_tag);
     try scene.queueMoveActor(marker, render2d.Vector2.xy(8.0, 0.0));
 
@@ -1247,6 +1266,7 @@ test "scene finish frame applies queued movement" {
 
     try std.testing.expectEqual(@as(f32, 15.0), actor_data.position.x);
     try std.testing.expectEqual(@as(f32, 17.0), actor_data.position.y);
+
     try std.testing.expect(!scene.hasQueuedCommands());
     try std.testing.expectEqual(@as(usize, 0), scene.commandItems().len);
 }
@@ -1313,7 +1333,10 @@ test "scene finish frame applies queued despawn" {
     scene.finishFrame();
 
     try std.testing.expect(scene.actorConst(actor_id) == null);
-    try std.testing.expect(scene.frameQueues().isEmpty());
+    try std.testing.expect(!scene.hasQueuedCommands());
+    try std.testing.expectEqual(@as(usize, 1), scene.eventReader().countActorLifecycle(
+        ActorLifecycleFilter.despawned().withActor(actor_id),
+    ));
 }
 
 test "scene returns actor snapshots" {
@@ -1549,4 +1572,67 @@ test "scene applies queued animation commands" {
         const actor_data = scene.actorConst(actor_id) orelse return error.ExpectedActor;
         try std.testing.expect(actor_data.animation_player.?.playing);
     }
+}
+
+test "scene emits actor spawned event" {
+    const player_tag = ActorTag.fromIndex(120);
+
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "lifecycle.spawn",
+        .size = render2d.Vector2.xy(32.0, 32.0),
+        .tag = player_tag,
+    });
+
+    const actor = try scene.spawn(prefab_id, .{
+        .position = render2d.Vector2.xy(0.0, 0.0),
+    });
+
+    const reader = scene.eventReader();
+
+    try std.testing.expect(reader.hasActorLifecycle(
+        ActorLifecycleFilter.spawned().withActor(actor),
+    ));
+
+    const event = reader.firstActorLifecycle(
+        ActorLifecycleFilter.spawned().withTag(player_tag),
+    ) orelse return error.MissingSpawnEvent;
+
+    const payload = event.actorLifecycleOrNull() orelse return error.MissingSpawnPayload;
+
+    try std.testing.expect(payload.actor.eql(actor));
+    try std.testing.expect(payload.tag.eql(player_tag));
+}
+
+test "scene emits actor despawned event" {
+    const enemy_tag = ActorTag.fromIndex(121);
+
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "lifecycle.despawn",
+        .size = render2d.Vector2.xy(32.0, 32.0),
+        .tag = enemy_tag,
+    });
+
+    const actor = try scene.spawn(prefab_id, .{});
+
+    scene.beginFrame();
+    scene.despawn(actor);
+
+    const reader = scene.eventReader();
+
+    try std.testing.expect(reader.hasActorLifecycle(
+        ActorLifecycleFilter.despawned().withActor(actor),
+    ));
+
+    const event = reader.firstActorLifecycle(
+        ActorLifecycleFilter.despawned().withTag(enemy_tag),
+    ) orelse return error.MissingDespawnEvent;
+
+    const payload = event.actorLifecycleOrNull() orelse return error.MissingDespawnPayload;
+
+    try std.testing.expect(payload.actor.eql(actor));
+    try std.testing.expect(payload.tag.eql(enemy_tag));
 }

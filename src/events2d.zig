@@ -11,10 +11,23 @@ pub const Error = error{
 
 /// Type of scene event emitted by 2D systems.
 pub const EventKind = enum(u8) {
+    actor_spawned,
+    actor_despawned,
     actor_overlap,
     actor_overlap_begin,
     actor_overlap_stay,
     actor_overlap_end,
+
+    /// Returns true for actor lifecycle events.
+    pub fn isActorLifecycle(self: EventKind) bool {
+        return switch (self) {
+            .actor_spawned,
+            .actor_despawned,
+            => true,
+
+            else => false,
+        };
+    }
 
     /// Returns true when this kind carries actor-overlap data.
     pub fn isActorOverlap(self: EventKind) bool {
@@ -24,6 +37,10 @@ pub const EventKind = enum(u8) {
             .actor_overlap_stay,
             .actor_overlap_end,
             => true,
+
+            .actor_spawned,
+            .actor_despawned,
+            => false,
         };
     }
 
@@ -34,7 +51,11 @@ pub const EventKind = enum(u8) {
             .actor_overlap_stay,
             .actor_overlap_end,
             => true,
-            .actor_overlap => false,
+
+            .actor_spawned,
+            .actor_despawned,
+            .actor_overlap,
+            => false,
         };
     }
 
@@ -45,8 +66,28 @@ pub const EventKind = enum(u8) {
             .actor_overlap_begin,
             .actor_overlap_stay,
             => true,
-            .actor_overlap_end => false,
+
+            .actor_spawned,
+            .actor_despawned,
+            .actor_overlap_end,
+            => false,
         };
+    }
+};
+
+/// Event payload emitted when an actor enters or leaves the world.
+pub const ActorLifecycleEvent = struct {
+    actor: world2d.ActorId,
+    tag: world2d.ActorTag,
+
+    /// Returns true when this event belongs to the given actor.
+    pub fn hasActor(self: ActorLifecycleEvent, actor: world2d.ActorId) bool {
+        return self.actor.eql(actor);
+    }
+
+    /// Returns true when this event belongs to the given actor tag.
+    pub fn hasTag(self: ActorLifecycleEvent, tag: world2d.ActorTag) bool {
+        return self.tag.eql(tag);
     }
 };
 
@@ -80,19 +121,21 @@ pub const ActorOverlapEvent = struct {
 
 /// Single typed event emitted by a 2D scene.
 pub const Event = union(EventKind) {
+    actor_spawned: ActorLifecycleEvent,
+    actor_despawned: ActorLifecycleEvent,
     actor_overlap: ActorOverlapEvent,
     actor_overlap_begin: ActorOverlapEvent,
     actor_overlap_stay: ActorOverlapEvent,
     actor_overlap_end: ActorOverlapEvent,
 
-    /// Returns this event's active kind.
-    pub fn kind(self: Event) EventKind {
-        return switch (self) {
-            .actor_overlap => .actor_overlap,
-            .actor_overlap_begin => .actor_overlap_begin,
-            .actor_overlap_stay => .actor_overlap_stay,
-            .actor_overlap_end => .actor_overlap_end,
-        };
+    /// Creates an actor spawned event.
+    pub fn actorSpawned(actor: world2d.ActorId, tag: world2d.ActorTag) Event {
+        return .{ .actor_spawned = .{ .actor = actor, .tag = tag } };
+    }
+
+    /// Creates an actor despawned event.
+    pub fn actorDespawned(actor: world2d.ActorId, tag: world2d.ActorTag) Event {
+        return .{ .actor_despawned = .{ .actor = actor, .tag = tag } };
     }
 
     /// Creates an actor-overlap event.
@@ -125,6 +168,22 @@ pub const Event = union(EventKind) {
             .actor_overlap_begin => .{ .actor_overlap_begin = payload },
             .actor_overlap_stay => .{ .actor_overlap_stay = payload },
             .actor_overlap_end => .{ .actor_overlap_end = payload },
+
+            .actor_spawned,
+            .actor_despawned,
+            => unreachable,
+        };
+    }
+
+    /// Returns the event kind.
+    pub fn kind(self: Event) EventKind {
+        return switch (self) {
+            .actor_spawned => .actor_spawned,
+            .actor_despawned => .actor_despawned,
+            .actor_overlap => .actor_overlap,
+            .actor_overlap_begin => .actor_overlap_begin,
+            .actor_overlap_stay => .actor_overlap_stay,
+            .actor_overlap_end => .actor_overlap_end,
         };
     }
 
@@ -156,6 +215,20 @@ pub const Event = union(EventKind) {
         other_tag: world2d.ActorTag,
     ) Event {
         return actorOverlapKind(.actor_overlap_end, actor, actor_tag, other, other_tag);
+    }
+
+    /// Returns true when this is an actor lifecycle event.
+    pub fn isActorLifecycle(self: Event) bool {
+        return self.kind().isActorLifecycle();
+    }
+
+    /// Returns the lifecycle payload when this is a lifecycle event.
+    pub fn actorLifecycleOrNull(self: Event) ?ActorLifecycleEvent {
+        return switch (self) {
+            .actor_spawned => |payload| payload,
+            .actor_despawned => |payload| payload,
+            else => null,
+        };
     }
 
     /// Returns true when this event carries actor-overlap data.
@@ -195,6 +268,7 @@ pub const Event = union(EventKind) {
             .actor_overlap_begin => |payload| payload,
             .actor_overlap_stay => |payload| payload,
             .actor_overlap_end => |payload| payload,
+            else => null,
         };
     }
 };
@@ -224,6 +298,16 @@ pub const EventQueue = struct {
 
         self.events[self.event_count] = event;
         self.event_count += 1;
+    }
+
+    /// Adds an actor-spawned event to the queue.
+    pub fn pushActorSpawned(self: *EventQueue, actor: world2d.ActorId, tag: world2d.ActorTag) !void {
+        try self.push(Event.actorSpawned(actor, tag));
+    }
+
+    /// Adds an actor-despawned event to the queue.
+    pub fn pushActorDespawned(self: *EventQueue, actor: world2d.ActorId, tag: world2d.ActorTag) !void {
+        try self.push(Event.actorDespawned(actor, tag));
     }
 
     /// Adds an actor-overlap event to the queue.

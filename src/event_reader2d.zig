@@ -88,6 +88,61 @@ pub const ActorOverlapFilter = struct {
     }
 };
 
+/// Filters actor spawn/despawn events by kind, actor, and tag.
+pub const ActorLifecycleFilter = struct {
+    kind: ?events2d.EventKind = null,
+    actor: ?world2d.ActorId = null,
+    tag: ?world2d.ActorTag = null,
+
+    /// Matches all actor lifecycle events.
+    pub fn any() ActorLifecycleFilter {
+        return .{};
+    }
+
+    /// Matches actor spawned events.
+    pub fn spawned() ActorLifecycleFilter {
+        return .{ .kind = .actor_spawned };
+    }
+
+    /// Matches actor despawned events.
+    pub fn despawned() ActorLifecycleFilter {
+        return .{ .kind = .actor_despawned };
+    }
+
+    /// Returns a copy of this filter limited to one actor.
+    pub fn withActor(self: ActorLifecycleFilter, actor: world2d.ActorId) ActorLifecycleFilter {
+        var next = self;
+        next.actor = actor;
+        return next;
+    }
+
+    /// Returns a copy of this filter limited to one actor tag.
+    pub fn withTag(self: ActorLifecycleFilter, tag: world2d.ActorTag) ActorLifecycleFilter {
+        var next = self;
+        next.tag = tag;
+        return next;
+    }
+
+    /// Returns true when an event satisfies this filter.
+    pub fn matches(self: ActorLifecycleFilter, event: events2d.Event) bool {
+        const lifecycle = event.actorLifecycleOrNull() orelse return false;
+
+        if (self.kind) |expected_kind| {
+            if (event.kind() != expected_kind) return false;
+        }
+
+        if (self.actor) |expected_actor| {
+            if (!lifecycle.actor.eql(expected_actor)) return false;
+        }
+
+        if (self.tag) |expected_tag| {
+            if (!lifecycle.hasTag(expected_tag)) return false;
+        }
+
+        return true;
+    }
+};
+
 /// Lightweight read-only view over scene events.
 pub const EventReader = struct {
     events: []const events2d.Event,
@@ -162,6 +217,31 @@ pub const EventReader = struct {
     /// Returns true when at least one actor-overlap event matches a filter.
     pub fn hasActorOverlap(self: EventReader, filter: ActorOverlapFilter) bool {
         return self.firstActorOverlap(filter) != null;
+    }
+
+    /// Counts actor lifecycle events that match the filter.
+    pub fn countActorLifecycle(self: EventReader, filter: ActorLifecycleFilter) usize {
+        var total: usize = 0;
+
+        for (self.events) |event| {
+            if (filter.matches(event)) total += 1;
+        }
+
+        return total;
+    }
+
+    /// Returns the first actor lifecycle event that matches the filter.
+    pub fn firstActorLifecycle(self: EventReader, filter: ActorLifecycleFilter) ?events2d.Event {
+        for (self.events) |event| {
+            if (filter.matches(event)) return event;
+        }
+
+        return null;
+    }
+
+    /// Returns true when any actor lifecycle event matches the filter.
+    pub fn hasActorLifecycle(self: EventReader, filter: ActorLifecycleFilter) bool {
+        return self.firstActorLifecycle(filter) != null;
     }
 };
 
