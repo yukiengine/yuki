@@ -203,7 +203,7 @@ pub const Demo = struct {
 
         self.scene.updateAnimations(dt_seconds);
 
-        _ = self.scene.emitActorOverlaps(self.player, tag_marker) catch unreachable;
+        _ = self.scene.emitActorOverlapTransitions(self.player, tag_marker) catch unreachable;
         self.handleSceneEvents(dt_seconds);
         self.scene.finishFrame();
 
@@ -314,9 +314,11 @@ pub const Demo = struct {
 
         for (self.scene.eventItems()) |event| {
             switch (event.kind) {
-                .actor_overlap => {
-                    const other = self.scene.actorConst(event.actor_overlap.other) orelse
-                        continue;
+                .actor_overlap,
+                .actor_overlap_begin,
+                .actor_overlap_stay,
+                => {
+                    const other = self.scene.actorConst(event.actor_overlap.other) orelse continue;
 
                     try debug.cross(
                         other.position,
@@ -324,6 +326,7 @@ pub const Demo = struct {
                         debug_marker_color,
                     );
                 },
+                .actor_overlap_end => {},
             }
         }
 
@@ -343,18 +346,14 @@ pub const Demo = struct {
     fn handleSceneEvents(self: *Demo, dt_seconds: f32) void {
         for (self.scene.eventItems()) |event| {
             switch (event.kind) {
-                .actor_overlap => {
+                .actor_overlap, .actor_overlap_begin, .actor_overlap_stay => {
                     const overlap = event.actor_overlap;
-
                     if (!overlap.other_tag.eql(tag_marker)) continue;
 
-                    const push = render2d.Vector2.xy(
-                        marker_push_speed * dt_seconds,
-                        0.0,
-                    );
-
+                    const push = render2d.Vector2.xy(marker_push_speed * dt_seconds, 0.0);
                     self.scene.queueMoveActor(overlap.other, push) catch unreachable;
                 },
+                .actor_overlap_end => {},
             }
         }
     }

@@ -5,6 +5,7 @@ const world2d = @import("world2d.zig");
 const prefab2d = @import("prefab2d.zig");
 const events2d = @import("events2d.zig");
 const commands2d = @import("commands2d.zig");
+const overlaps2d = @import("overlaps2d.zig");
 
 /// Public 2D scene command.
 pub const Command = commands2d.Command;
@@ -48,6 +49,10 @@ pub const Event = events2d.Event;
 /// Public 2D scene event queue.
 pub const EventQueue = events2d.EventQueue;
 
+pub const ActorOverlapPair = overlaps2d.ActorOverlapPair;
+pub const ActorOverlapTracker = overlaps2d.ActorOverlapTracker;
+pub const Error = prefab2d.Error || events2d.Error || commands2d.Error || overlaps2d.Error;
+
 /// Counts frame-local scene queues.
 pub const FrameQueues = struct {
     event_count: usize = 0,
@@ -87,15 +92,13 @@ pub const FrameQueues = struct {
     }
 };
 
-/// Scene-level errors.
-pub const Error = prefab2d.Error || events2d.Error || commands2d.Error;
-
 /// High-level 2D scene made of prefabs and actors.
 pub const Scene = struct {
     world: world2d.World,
     prefabs: prefab2d.PrefabCatalog,
     events: EventQueue,
     commands: CommandQueue,
+    overlaps: ActorOverlapTracker,
 
     /// Creates an empty 2D scene.
     pub fn init() Scene {
@@ -104,6 +107,7 @@ pub const Scene = struct {
             .prefabs = prefab2d.PrefabCatalog.init(),
             .events = EventQueue.init(),
             .commands = CommandQueue.init(),
+            .overlaps = ActorOverlapTracker.init(),
         };
     }
 
@@ -111,11 +115,13 @@ pub const Scene = struct {
     pub fn beginFrame(self: *Scene) void {
         self.clearEvents();
         self.clearCommands();
+        self.overlaps.beginFrame();
     }
 
     /// Finishes a scene frame by applying deferred commands.
     pub fn finishFrame(self: *Scene) void {
         self.applyCommands();
+        self.overlaps.finishFrame();
     }
 
     /// Returns current frame-local event and command counts.
@@ -467,6 +473,37 @@ pub const Scene = struct {
         }
 
         self.clearCommands();
+    }
+
+    /// Emits begin/stay/end overlap events for one actor and target tag query.
+    pub fn emitActorOverlapTransitions(self: *Scene, actor_id: ActorId, target_tag: ActorTag) !usize {
+        const actor_data = self.actorConst(actor_id) orelse unreachable;
+
+        var result = ActorQueryResult.init();
+        try self.collectActorsInRect(
+            ActorQuery.all(actor_data.bounds()).withTag(target_tag).withoutActor(actor_id),
+            &result,
+        );
+
+        for (result.items()) |hit| {
+            const pair = ActorOverlapPair.init(actor_id, actor_data.tag, hit.id, hit.tag);
+            const kind: EventKind = if (self.overlaps.wasOverlapping(pair))
+                .actor_overlap_stay
+            else
+                .actor_overlap_begin;
+
+            try self.events.pushActorOverlapKind(kind, pair.actor, pair.actor_tag, pair.other, pair.other_tag);
+            try self.overlaps.remember(pair);
+        }
+
+        for (self.overlaps.previousItems()) |pair| {
+            if (!pair.matchesQuery(actor_id, target_tag)) continue;
+            if (self.overlaps.isCurrent(pair)) continue;
+
+            try self.events.pushActorOverlapKind(.actor_overlap_end, pair.actor, pair.actor_tag, pair.other, pair.other_tag);
+        }
+
+        return result.items().len;
     }
 };
 

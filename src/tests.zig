@@ -7,4 +7,5 @@ test {
     _ = @import("tilemap.zig");
     _ = @import("time.zig");
     _ = @import("world2d.zig");
+    _ = @import("overlaps2d.zig");
 }
