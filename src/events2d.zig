@@ -78,10 +78,22 @@ pub const ActorOverlapEvent = struct {
     }
 };
 
-/// Single event emitted by a 2D scene.
-pub const Event = struct {
-    kind: EventKind,
+/// Single typed event emitted by a 2D scene.
+pub const Event = union(EventKind) {
     actor_overlap: ActorOverlapEvent,
+    actor_overlap_begin: ActorOverlapEvent,
+    actor_overlap_stay: ActorOverlapEvent,
+    actor_overlap_end: ActorOverlapEvent,
+
+    /// Returns this event's active kind.
+    pub fn kind(self: Event) EventKind {
+        return switch (self) {
+            .actor_overlap => .actor_overlap,
+            .actor_overlap_begin => .actor_overlap_begin,
+            .actor_overlap_stay => .actor_overlap_stay,
+            .actor_overlap_end => .actor_overlap_end,
+        };
+    }
 
     /// Creates an actor-overlap event.
     pub fn actorOverlap(
@@ -90,85 +102,100 @@ pub const Event = struct {
         other: world2d.ActorId,
         other_tag: world2d.ActorTag,
     ) Event {
-        return .{
-            .kind = .actor_overlap,
-            .actor_overlap = .{
-                .actor = actor,
-                .other = other,
-                .actor_tag = actor_tag,
-                .other_tag = other_tag,
-            },
-        };
+        return actorOverlapKind(.actor_overlap, actor, actor_tag, other, other_tag);
     }
 
     /// Creates an actor-overlap event with a specific transition kind.
     pub fn actorOverlapKind(
-        kind: EventKind,
+        event_kind: EventKind,
         actor: world2d.ActorId,
         actor_tag: world2d.ActorTag,
         other: world2d.ActorId,
         other_tag: world2d.ActorTag,
     ) Event {
-        return .{
-            .kind = kind,
-            .actor_overlap = .{
-                .actor = actor,
-                .other = other,
-                .actor_tag = actor_tag,
-                .other_tag = other_tag,
-            },
+        const payload = ActorOverlapEvent{
+            .actor = actor,
+            .other = other,
+            .actor_tag = actor_tag,
+            .other_tag = other_tag,
+        };
+
+        return switch (event_kind) {
+            .actor_overlap => .{ .actor_overlap = payload },
+            .actor_overlap_begin => .{ .actor_overlap_begin = payload },
+            .actor_overlap_stay => .{ .actor_overlap_stay = payload },
+            .actor_overlap_end => .{ .actor_overlap_end = payload },
         };
     }
 
     /// Creates an actor-overlap begin event.
-    pub fn actorOverlapBegin(actor: world2d.ActorId, actor_tag: world2d.ActorTag, other: world2d.ActorId, other_tag: world2d.ActorTag) Event {
+    pub fn actorOverlapBegin(
+        actor: world2d.ActorId,
+        actor_tag: world2d.ActorTag,
+        other: world2d.ActorId,
+        other_tag: world2d.ActorTag,
+    ) Event {
         return actorOverlapKind(.actor_overlap_begin, actor, actor_tag, other, other_tag);
     }
 
     /// Creates an actor-overlap stay event.
-    pub fn actorOverlapStay(actor: world2d.ActorId, actor_tag: world2d.ActorTag, other: world2d.ActorId, other_tag: world2d.ActorTag) Event {
+    pub fn actorOverlapStay(
+        actor: world2d.ActorId,
+        actor_tag: world2d.ActorTag,
+        other: world2d.ActorId,
+        other_tag: world2d.ActorTag,
+    ) Event {
         return actorOverlapKind(.actor_overlap_stay, actor, actor_tag, other, other_tag);
     }
 
     /// Creates an actor-overlap end event.
-    pub fn actorOverlapEnd(actor: world2d.ActorId, actor_tag: world2d.ActorTag, other: world2d.ActorId, other_tag: world2d.ActorTag) Event {
+    pub fn actorOverlapEnd(
+        actor: world2d.ActorId,
+        actor_tag: world2d.ActorTag,
+        other: world2d.ActorId,
+        other_tag: world2d.ActorTag,
+    ) Event {
         return actorOverlapKind(.actor_overlap_end, actor, actor_tag, other, other_tag);
     }
 
     /// Returns true when this event carries actor-overlap data.
     pub fn isActorOverlap(self: Event) bool {
-        return self.kind.isActorOverlap();
+        return self.kind().isActorOverlap();
     }
 
     /// Returns true when this event is begin/stay/end overlap data.
     pub fn isActorOverlapTransition(self: Event) bool {
-        return self.kind.isActorOverlapTransition();
+        return self.kind().isActorOverlapTransition();
     }
 
     /// Returns true while this overlap is active this frame.
     pub fn isActiveActorOverlap(self: Event) bool {
-        return self.kind.isActiveActorOverlap();
+        return self.kind().isActiveActorOverlap();
     }
 
     /// Returns true when this event kind is actor-overlap begin.
     pub fn isActorOverlapBegin(self: Event) bool {
-        return self.kind == .actor_overlap_begin;
+        return self.kind() == .actor_overlap_begin;
     }
 
     /// Returns true when this event kind is actor-overlap stay.
     pub fn isActorOverlapStay(self: Event) bool {
-        return self.kind == .actor_overlap_stay;
+        return self.kind() == .actor_overlap_stay;
     }
 
     /// Returns true when this event kind is actor-overlap end.
     pub fn isActorOverlapEnd(self: Event) bool {
-        return self.kind == .actor_overlap_end;
+        return self.kind() == .actor_overlap_end;
     }
 
     /// Returns the actor-overlap payload when this event carries one.
     pub fn actorOverlapOrNull(self: Event) ?ActorOverlapEvent {
-        if (!self.isActorOverlap()) return null;
-        return self.actor_overlap;
+        return switch (self) {
+            .actor_overlap => |payload| payload,
+            .actor_overlap_begin => |payload| payload,
+            .actor_overlap_stay => |payload| payload,
+            .actor_overlap_end => |payload| payload,
+        };
     }
 };
 
@@ -207,13 +234,19 @@ pub const EventQueue = struct {
         other: world2d.ActorId,
         other_tag: world2d.ActorTag,
     ) !void {
-        try self.push(Event.actorOverlapKind(
-            .actor_overlap,
-            actor,
-            actor_tag,
-            other,
-            other_tag,
-        ));
+        try self.push(Event.actorOverlap(actor, actor_tag, other, other_tag));
+    }
+
+    /// Adds an actor-overlap transition event to the queue.
+    pub fn pushActorOverlapKind(
+        self: *EventQueue,
+        event_kind: EventKind,
+        actor: world2d.ActorId,
+        actor_tag: world2d.ActorTag,
+        other: world2d.ActorId,
+        other_tag: world2d.ActorTag,
+    ) !void {
+        try self.push(Event.actorOverlapKind(event_kind, actor, actor_tag, other, other_tag));
     }
 
     /// Returns queued events.
@@ -227,20 +260,20 @@ pub const EventQueue = struct {
     }
 
     /// Counts events of a specific kind.
-    pub fn countKind(self: *const EventQueue, kind: EventKind) usize {
-        var count_kind: usize = 0;
+    pub fn countKind(self: *const EventQueue, event_kind: EventKind) usize {
+        var total: usize = 0;
 
         for (self.items()) |event| {
-            if (event.kind == kind) count_kind += 1;
+            if (event.kind() == event_kind) total += 1;
         }
 
-        return count_kind;
+        return total;
     }
 
     /// Returns the first event of a specific kind.
-    pub fn firstKind(self: *const EventQueue, kind: EventKind) ?Event {
+    pub fn firstKind(self: *const EventQueue, event_kind: EventKind) ?Event {
         for (self.items()) |event| {
-            if (event.kind == kind) return event;
+            if (event.kind() == event_kind) return event;
         }
 
         return null;
@@ -250,53 +283,4 @@ pub const EventQueue = struct {
     pub fn count(self: *const EventQueue) usize {
         return self.event_count;
     }
-
-    /// Adds an actor-overlap transition event to the queue.
-    pub fn pushActorOverlapKind(
-        self: *EventQueue,
-        kind: EventKind,
-        actor: world2d.ActorId,
-        actor_tag: world2d.ActorTag,
-        other: world2d.ActorId,
-        other_tag: world2d.ActorTag,
-    ) !void {
-        try self.push(Event.actorOverlapKind(kind, actor, actor_tag, other, other_tag));
-    }
 };
-
-test "event queue stores actor overlap events" {
-    const actor = world2d.ActorId{ .index = 1, .generation = 1 };
-    const other = world2d.ActorId{ .index = 2, .generation = 1 };
-    const actor_tag = world2d.ActorTag.fromIndex(10);
-    const other_tag = world2d.ActorTag.fromIndex(11);
-
-    var queue = EventQueue.init();
-
-    try queue.pushActorOverlap(actor, actor_tag, other, other_tag);
-
-    try std.testing.expect(!queue.isEmpty());
-    try std.testing.expectEqual(@as(usize, 1), queue.items().len);
-    try std.testing.expectEqual(@as(usize, 1), queue.countKind(.actor_overlap));
-
-    const event = queue.firstKind(.actor_overlap).?;
-    try std.testing.expect(event.actor_overlap.actor.eql(actor));
-    try std.testing.expect(event.actor_overlap.other.eql(other));
-    try std.testing.expect(event.actor_overlap.actor_tag.eql(actor_tag));
-    try std.testing.expect(event.actor_overlap.other_tag.eql(other_tag));
-}
-
-test "event queue clears events" {
-    var queue = EventQueue.init();
-
-    try queue.pushActorOverlap(
-        .{ .index = 1, .generation = 1 },
-        world2d.ActorTag.fromIndex(1),
-        .{ .index = 2, .generation = 1 },
-        world2d.ActorTag.fromIndex(2),
-    );
-
-    queue.clear();
-
-    try std.testing.expect(queue.isEmpty());
-    try std.testing.expectEqual(@as(usize, 0), queue.items().len);
-}

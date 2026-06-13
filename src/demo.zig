@@ -320,8 +320,8 @@ pub const Demo = struct {
         for (reader.items()) |event| {
             if (!filter.matches(event)) continue;
 
-            const other = self.scene.actorConst(event.actor_overlap.other) orelse
-                continue;
+            const overlap = event.actorOverlapOrNull() orelse continue;
+            const other = self.scene.actorConst(overlap.other) orelse continue;
 
             try debug.cross(
                 other.position,
@@ -345,14 +345,12 @@ pub const Demo = struct {
     /// Converts scene events into deferred demo commands.
     fn handleSceneEvents(self: *Demo, dt_seconds: f32) void {
         const reader = self.scene.eventReader();
-        const filter = scene2d.ActorOverlapFilter
-            .active()
-            .withOtherTag(tag_marker);
+        const filter = scene2d.ActorOverlapFilter.active().withOtherTag(tag_marker);
 
         for (reader.items()) |event| {
             if (!filter.matches(event)) continue;
 
-            const overlap = event.actor_overlap;
+            const overlap = event.actorOverlapOrNull() orelse continue;
             const push = render2d.Vector2.xy(marker_push_speed * dt_seconds, 0.0);
 
             self.scene.queueMoveActor(overlap.other, push) catch unreachable;

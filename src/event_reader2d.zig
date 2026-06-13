@@ -65,7 +65,7 @@ pub const ActorOverlapFilter = struct {
         if (self.active_only and !event.isActiveActorOverlap()) return false;
 
         if (self.kind) |kind| {
-            if (event.kind != kind) return false;
+            if (event.kind() != kind) return false;
         }
 
         if (self.actor) |actor| {
@@ -124,7 +124,7 @@ pub const EventReader = struct {
         var total: usize = 0;
 
         for (self.events) |event| {
-            if (event.kind == kind) total += 1;
+            if (event.kind() == kind) total += 1;
         }
 
         return total;
@@ -133,7 +133,7 @@ pub const EventReader = struct {
     /// Returns the first event of one kind.
     pub fn firstKind(self: EventReader, kind: events2d.EventKind) ?events2d.Event {
         for (self.events) |event| {
-            if (event.kind == kind) return event;
+            if (event.kind() == kind) return event;
         }
 
         return null;
@@ -204,5 +204,6 @@ test "event reader finds first overlap by kind" {
     ) orelse return error.ExpectedEvent;
 
     try std.testing.expect(event.isActorOverlapEnd());
-    try std.testing.expect(event.actor_overlap.actor.eql(actor));
+    const overlap = event.actorOverlapOrNull().?;
+    try std.testing.expect(overlap.actor.eql(actor));
 }

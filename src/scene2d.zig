@@ -871,10 +871,11 @@ test "scene emits first actor overlap event" {
 
     const event = scene.eventItems()[0];
 
-    try std.testing.expect(event.actor_overlap.actor.eql(player));
-    try std.testing.expect(event.actor_overlap.other.eql(pickup));
-    try std.testing.expect(event.actor_overlap.actor_tag.eql(player_tag));
-    try std.testing.expect(event.actor_overlap.other_tag.eql(pickup_tag));
+    const overlap = event.actorOverlapOrNull().?;
+    try std.testing.expect(overlap.actor.eql(player));
+    try std.testing.expect(overlap.other.eql(pickup));
+    try std.testing.expect(overlap.actor_tag.eql(player_tag));
+    try std.testing.expect(overlap.other_tag.eql(pickup_tag));
 }
 
 test "scene emits all actor overlap events" {
