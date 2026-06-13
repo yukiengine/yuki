@@ -312,22 +312,22 @@ pub const Demo = struct {
             );
         }
 
-        for (self.scene.eventItems()) |event| {
-            switch (event.kind) {
-                .actor_overlap,
-                .actor_overlap_begin,
-                .actor_overlap_stay,
-                => {
-                    const other = self.scene.actorConst(event.actor_overlap.other) orelse continue;
+        const reader = self.scene.eventReader();
+        const filter = scene2d.ActorOverlapFilter
+            .active()
+            .withOtherTag(tag_marker);
 
-                    try debug.cross(
-                        other.position,
-                        24.0,
-                        debug_marker_color,
-                    );
-                },
-                .actor_overlap_end => {},
-            }
+        for (reader.items()) |event| {
+            if (!filter.matches(event)) continue;
+
+            const other = self.scene.actorConst(event.actor_overlap.other) orelse
+                continue;
+
+            try debug.cross(
+                other.position,
+                24.0,
+                debug_marker_color,
+            );
         }
 
         try debug.rectOutline(
@@ -344,17 +344,18 @@ pub const Demo = struct {
 
     /// Converts scene events into deferred demo commands.
     fn handleSceneEvents(self: *Demo, dt_seconds: f32) void {
-        for (self.scene.eventItems()) |event| {
-            switch (event.kind) {
-                .actor_overlap, .actor_overlap_begin, .actor_overlap_stay => {
-                    const overlap = event.actor_overlap;
-                    if (!overlap.other_tag.eql(tag_marker)) continue;
+        const reader = self.scene.eventReader();
+        const filter = scene2d.ActorOverlapFilter
+            .active()
+            .withOtherTag(tag_marker);
 
-                    const push = render2d.Vector2.xy(marker_push_speed * dt_seconds, 0.0);
-                    self.scene.queueMoveActor(overlap.other, push) catch unreachable;
-                },
-                .actor_overlap_end => {},
-            }
+        for (reader.items()) |event| {
+            if (!filter.matches(event)) continue;
+
+            const overlap = event.actor_overlap;
+            const push = render2d.Vector2.xy(marker_push_speed * dt_seconds, 0.0);
+
+            self.scene.queueMoveActor(overlap.other, push) catch unreachable;
         }
     }
 };

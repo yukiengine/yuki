@@ -6,6 +6,7 @@ const prefab2d = @import("prefab2d.zig");
 const events2d = @import("events2d.zig");
 const commands2d = @import("commands2d.zig");
 const overlaps2d = @import("overlaps2d.zig");
+const event_reader2d = @import("event_reader2d.zig");
 
 /// Public 2D scene command.
 pub const Command = commands2d.Command;
@@ -51,6 +52,13 @@ pub const EventQueue = events2d.EventQueue;
 
 pub const ActorOverlapPair = overlaps2d.ActorOverlapPair;
 pub const ActorOverlapTracker = overlaps2d.ActorOverlapTracker;
+
+/// Public read-only scene event reader.
+pub const EventReader = event_reader2d.EventReader;
+
+/// Public actor-overlap event filter.
+pub const ActorOverlapFilter = event_reader2d.ActorOverlapFilter;
+
 pub const Error = prefab2d.Error || events2d.Error || commands2d.Error || overlaps2d.Error;
 
 /// Counts frame-local scene queues.
@@ -351,6 +359,11 @@ pub const Scene = struct {
     /// Returns queued frame-local scene events.
     pub fn eventItems(self: *const Scene) []const Event {
         return self.events.items();
+    }
+
+    /// Returns a read-only helper for querying frame-local scene events.
+    pub fn eventReader(self: *const Scene) EventReader {
+        return EventReader.init(self.eventItems());
     }
 
     /// Emits one actor-overlap event.

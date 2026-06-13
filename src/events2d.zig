@@ -15,6 +15,39 @@ pub const EventKind = enum(u8) {
     actor_overlap_begin,
     actor_overlap_stay,
     actor_overlap_end,
+
+    /// Returns true when this kind carries actor-overlap data.
+    pub fn isActorOverlap(self: EventKind) bool {
+        return switch (self) {
+            .actor_overlap,
+            .actor_overlap_begin,
+            .actor_overlap_stay,
+            .actor_overlap_end,
+            => true,
+        };
+    }
+
+    /// Returns true when this kind is an overlap transition.
+    pub fn isActorOverlapTransition(self: EventKind) bool {
+        return switch (self) {
+            .actor_overlap_begin,
+            .actor_overlap_stay,
+            .actor_overlap_end,
+            => true,
+            .actor_overlap => false,
+        };
+    }
+
+    /// Returns true while the overlap is active this frame.
+    pub fn isActiveActorOverlap(self: EventKind) bool {
+        return switch (self) {
+            .actor_overlap,
+            .actor_overlap_begin,
+            .actor_overlap_stay,
+            => true,
+            .actor_overlap_end => false,
+        };
+    }
 };
 
 /// Event emitted when one actor overlaps another actor.
@@ -23,6 +56,26 @@ pub const ActorOverlapEvent = struct {
     other: world2d.ActorId,
     actor_tag: world2d.ActorTag,
     other_tag: world2d.ActorTag,
+
+    /// Returns true when this event belongs to the actor.
+    pub fn hasActor(self: ActorOverlapEvent, actor: world2d.ActorId) bool {
+        return self.actor.eql(actor);
+    }
+
+    /// Returns true when this event targets the other actor.
+    pub fn hasOther(self: ActorOverlapEvent, other: world2d.ActorId) bool {
+        return self.other.eql(other);
+    }
+
+    /// Returns true when this event actor has the tag.
+    pub fn hasActorTag(self: ActorOverlapEvent, tag: world2d.ActorTag) bool {
+        return self.actor_tag.eql(tag);
+    }
+
+    /// Returns true when this event other actor has the tag.
+    pub fn hasOtherTag(self: ActorOverlapEvent, tag: world2d.ActorTag) bool {
+        return self.other_tag.eql(tag);
+    }
 };
 
 /// Single event emitted by a 2D scene.
@@ -80,6 +133,42 @@ pub const Event = struct {
     /// Creates an actor-overlap end event.
     pub fn actorOverlapEnd(actor: world2d.ActorId, actor_tag: world2d.ActorTag, other: world2d.ActorId, other_tag: world2d.ActorTag) Event {
         return actorOverlapKind(.actor_overlap_end, actor, actor_tag, other, other_tag);
+    }
+
+    /// Returns true when this event carries actor-overlap data.
+    pub fn isActorOverlap(self: Event) bool {
+        return self.kind.isActorOverlap();
+    }
+
+    /// Returns true when this event is begin/stay/end overlap data.
+    pub fn isActorOverlapTransition(self: Event) bool {
+        return self.kind.isActorOverlapTransition();
+    }
+
+    /// Returns true while this overlap is active this frame.
+    pub fn isActiveActorOverlap(self: Event) bool {
+        return self.kind.isActiveActorOverlap();
+    }
+
+    /// Returns true when this event kind is actor-overlap begin.
+    pub fn isActorOverlapBegin(self: Event) bool {
+        return self.kind == .actor_overlap_begin;
+    }
+
+    /// Returns true when this event kind is actor-overlap stay.
+    pub fn isActorOverlapStay(self: Event) bool {
+        return self.kind == .actor_overlap_stay;
+    }
+
+    /// Returns true when this event kind is actor-overlap end.
+    pub fn isActorOverlapEnd(self: Event) bool {
+        return self.kind == .actor_overlap_end;
+    }
+
+    /// Returns the actor-overlap payload when this event carries one.
+    pub fn actorOverlapOrNull(self: Event) ?ActorOverlapEvent {
+        if (!self.isActorOverlap()) return null;
+        return self.actor_overlap;
     }
 };
 
