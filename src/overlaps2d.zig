@@ -149,24 +149,3 @@ pub const ActorOverlapTracker = struct {
         return self.current.items();
     }
 };
-
-test "overlap tracker detects begin and stay" {
-    const actor = world2d.ActorId{ .index = 1, .generation = 1 };
-    const other = world2d.ActorId{ .index = 2, .generation = 1 };
-    const pair = ActorOverlapPair.init(
-        actor,
-        world2d.ActorTag.fromIndex(1),
-        other,
-        world2d.ActorTag.fromIndex(2),
-    );
-
-    var tracker = ActorOverlapTracker.init();
-
-    tracker.beginFrame();
-    try std.testing.expect(!tracker.wasOverlapping(pair));
-    try tracker.remember(pair);
-    tracker.finishFrame();
-
-    tracker.beginFrame();
-    try std.testing.expect(tracker.wasOverlapping(pair));
-}

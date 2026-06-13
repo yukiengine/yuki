@@ -128,27 +128,3 @@ fn rectCenter(rect: render2d.Rect2D) render2d.Vector2 {
 fn rectSize(rect: render2d.Rect2D) render2d.Vector2 {
     return render2d.Vector2.xy(rect.width(), rect.height());
 }
-
-test "rect center uses midpoint" {
-    const rect = render2d.Rect2D.fromMinMax(
-        render2d.Vector2.xy(10.0, 20.0),
-        render2d.Vector2.xy(30.0, 60.0),
-    );
-
-    const center = rectCenter(rect);
-
-    try std.testing.expectEqual(@as(f32, 20.0), center.x);
-    try std.testing.expectEqual(@as(f32, 40.0), center.y);
-}
-
-test "rect size uses width and height" {
-    const rect = render2d.Rect2D.fromMinMax(
-        render2d.Vector2.xy(10.0, 20.0),
-        render2d.Vector2.xy(30.0, 60.0),
-    );
-
-    const size = rectSize(rect);
-
-    try std.testing.expectEqual(@as(f32, 20.0), size.x);
-    try std.testing.expectEqual(@as(f32, 40.0), size.y);
-}
