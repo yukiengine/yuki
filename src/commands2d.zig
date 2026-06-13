@@ -28,12 +28,42 @@ pub const SetActorVelocityCommand = struct {
     velocity: render2d.Vector2,
 };
 
+/// Command payload used to replace one actor rotation.
+pub const SetActorRotationCommand = struct {
+    actor: world2d.ActorId,
+    rotation_radians: f32,
+};
+
+/// Command payload used to add to one actor rotation.
+pub const RotateActorCommand = struct {
+    actor: world2d.ActorId,
+    radians: f32,
+};
+
+/// Command payload used to replace one actor layer.
+pub const SetActorLayerCommand = struct {
+    actor: world2d.ActorId,
+    layer: i32,
+};
+
+/// Command payload used to replace one actor tag.
+pub const SetActorTagCommand = struct {
+    actor: world2d.ActorId,
+    tag: world2d.ActorTag,
+};
+
 /// Deferred scene mutation applied after gameplay/event handling.
 pub const Command = union(enum) {
     despawn_actor: world2d.ActorId,
     move_actor: MoveActorCommand,
     set_actor_position: SetActorPositionCommand,
     set_actor_velocity: SetActorVelocityCommand,
+    set_actor_rotation: SetActorRotationCommand,
+    rotate_actor: RotateActorCommand,
+    set_actor_layer: SetActorLayerCommand,
+    set_actor_tag: SetActorTagCommand,
+    reset_actor_animation: world2d.ActorId,
+    toggle_actor_animation: world2d.ActorId,
 
     /// Creates a command that despawns one actor.
     pub fn despawnActor(actor: world2d.ActorId) Command {
@@ -43,31 +73,52 @@ pub const Command = union(enum) {
     /// Creates a command that moves one actor by a delta.
     pub fn moveActor(actor: world2d.ActorId, delta: render2d.Vector2) Command {
         return .{
-            .move_actor = .{
-                .actor = actor,
-                .delta = delta,
-            },
+            .move_actor = .{ .actor = actor, .delta = delta },
         };
     }
 
     /// Creates a command that sets one actor position.
     pub fn setActorPosition(actor: world2d.ActorId, position: render2d.Vector2) Command {
         return .{
-            .set_actor_position = .{
-                .actor = actor,
-                .position = position,
-            },
+            .set_actor_position = .{ .actor = actor, .position = position },
         };
     }
 
     /// Creates a command that sets one actor velocity.
     pub fn setActorVelocity(actor: world2d.ActorId, velocity: render2d.Vector2) Command {
         return .{
-            .set_actor_velocity = .{
-                .actor = actor,
-                .velocity = velocity,
-            },
+            .set_actor_velocity = .{ .actor = actor, .velocity = velocity },
         };
+    }
+
+    /// Creates a command that sets one actor rotation.
+    pub fn setActorRotation(actor: world2d.ActorId, rotation_radians: f32) Command {
+        return .{ .set_actor_rotation = .{ .actor = actor, .rotation_radians = rotation_radians } };
+    }
+
+    /// Creates a command that rotates one actor.
+    pub fn rotateActor(actor: world2d.ActorId, radians: f32) Command {
+        return .{ .rotate_actor = .{ .actor = actor, .radians = radians } };
+    }
+
+    /// Creates a command that sets one actor layer.
+    pub fn setActorLayer(actor: world2d.ActorId, layer: i32) Command {
+        return .{ .set_actor_layer = .{ .actor = actor, .layer = layer } };
+    }
+
+    /// Creates a command that sets one actor tag.
+    pub fn setActorTag(actor: world2d.ActorId, tag: world2d.ActorTag) Command {
+        return .{ .set_actor_tag = .{ .actor = actor, .tag = tag } };
+    }
+
+    /// Creates a command that resets one actor animation.
+    pub fn resetActorAnimation(actor: world2d.ActorId) Command {
+        return .{ .reset_actor_animation = actor };
+    }
+
+    /// Creates a command that toggles one actor animation.
+    pub fn toggleActorAnimation(actor: world2d.ActorId) Command {
+        return .{ .toggle_actor_animation = actor };
     }
 };
 
@@ -143,6 +194,52 @@ pub const CommandQueue = struct {
     /// Returns the number of queued commands.
     pub fn count(self: *const CommandQueue) usize {
         return self.command_count;
+    }
+
+    /// Queues an actor rotation replacement command.
+    pub fn setActorRotation(
+        self: *CommandQueue,
+        actor: world2d.ActorId,
+        rotation_radians: f32,
+    ) !void {
+        try self.push(Command.setActorRotation(actor, rotation_radians));
+    }
+
+    /// Queues an actor rotation delta command.
+    pub fn rotateActor(
+        self: *CommandQueue,
+        actor: world2d.ActorId,
+        radians: f32,
+    ) !void {
+        try self.push(Command.rotateActor(actor, radians));
+    }
+
+    /// Queues an actor layer replacement command.
+    pub fn setActorLayer(
+        self: *CommandQueue,
+        actor: world2d.ActorId,
+        layer: i32,
+    ) !void {
+        try self.push(Command.setActorLayer(actor, layer));
+    }
+
+    /// Queues an actor tag replacement command.
+    pub fn setActorTag(
+        self: *CommandQueue,
+        actor: world2d.ActorId,
+        tag: world2d.ActorTag,
+    ) !void {
+        try self.push(Command.setActorTag(actor, tag));
+    }
+
+    /// Queues an actor animation reset command.
+    pub fn resetActorAnimation(self: *CommandQueue, actor: world2d.ActorId) !void {
+        try self.push(Command.resetActorAnimation(actor));
+    }
+
+    /// Queues an actor animation toggle command.
+    pub fn toggleActorAnimation(self: *CommandQueue, actor: world2d.ActorId) !void {
+        try self.push(Command.toggleActorAnimation(actor));
     }
 };
 

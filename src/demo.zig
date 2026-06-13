@@ -194,12 +194,15 @@ pub const Demo = struct {
             movement,
         );
 
-        if (self.scene.actor(self.player)) |player| {
-            if (input_state.pause_animation_pressed) player.toggleAnimation();
-            if (input_state.reset_animation_pressed) player.resetAnimation();
-
-            player.rotateBy(2.0 * dt_seconds);
+        if (input_state.pause_animation_pressed) {
+            self.scene.toggleActorAnimation(self.player);
         }
+
+        if (input_state.reset_animation_pressed) {
+            self.scene.resetActorAnimation(self.player);
+        }
+
+        self.scene.rotateActor(self.player, 2.0 * dt_seconds);
 
         self.scene.updateAnimations(dt_seconds);
 

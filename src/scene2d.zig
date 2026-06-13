@@ -277,6 +277,42 @@ pub const Scene = struct {
         self.world.setVelocity(id, velocity);
     }
 
+    /// Replaces an actor position.
+    pub fn setPosition(self: *Scene, id: ActorId, position: render2d.Vector2) void {
+        const target = self.actor(id) orelse return;
+        target.position = position;
+    }
+
+    /// Replaces an actor rotation.
+    pub fn setActorRotation(self: *Scene, id: ActorId, rotation_radians: f32) void {
+        const target = self.actor(id) orelse return;
+        target.rotation_radians = wrapRadians(rotation_radians);
+    }
+
+    /// Adds to an actor rotation.
+    pub fn rotateActor(self: *Scene, id: ActorId, radians: f32) void {
+        const target = self.actor(id) orelse return;
+        target.rotateBy(radians);
+    }
+
+    /// Replaces an actor layer.
+    pub fn setActorLayer(self: *Scene, id: ActorId, layer: i32) void {
+        const target = self.actor(id) orelse return;
+        target.layer = layer;
+    }
+
+    /// Resets an actor animation if the actor has one.
+    pub fn resetActorAnimation(self: *Scene, id: ActorId) void {
+        const target = self.actor(id) orelse return;
+        target.resetAnimation();
+    }
+
+    /// Toggles an actor animation if the actor has one.
+    pub fn toggleActorAnimation(self: *Scene, id: ActorId) void {
+        const target = self.actor(id) orelse return;
+        target.toggleAnimation();
+    }
+
     /// Moves an actor directly without collision.
     pub fn moveActor(self: *Scene, id: ActorId, delta: render2d.Vector2) void {
         self.world.moveActor(id, delta);
@@ -521,6 +557,44 @@ pub const Scene = struct {
         try self.commands.setActorVelocity(actor_id, velocity);
     }
 
+    /// Queues an actor rotation replacement.
+    pub fn queueSetActorRotation(
+        self: *Scene,
+        actor_id: ActorId,
+        rotation_radians: f32,
+    ) !void {
+        try self.commands.setActorRotation(actor_id, rotation_radians);
+    }
+
+    /// Queues an actor rotation delta.
+    pub fn queueRotateActor(
+        self: *Scene,
+        actor_id: ActorId,
+        radians: f32,
+    ) !void {
+        try self.commands.rotateActor(actor_id, radians);
+    }
+
+    /// Queues an actor layer replacement.
+    pub fn queueSetActorLayer(self: *Scene, actor_id: ActorId, layer: i32) !void {
+        try self.commands.setActorLayer(actor_id, layer);
+    }
+
+    /// Queues an actor tag replacement.
+    pub fn queueSetActorTag(self: *Scene, actor_id: ActorId, tag: ActorTag) !void {
+        try self.commands.setActorTag(actor_id, tag);
+    }
+
+    /// Queues an actor animation reset.
+    pub fn queueResetActorAnimation(self: *Scene, actor_id: ActorId) !void {
+        try self.commands.resetActorAnimation(actor_id);
+    }
+
+    /// Queues an actor animation toggle.
+    pub fn queueToggleActorAnimation(self: *Scene, actor_id: ActorId) !void {
+        try self.commands.toggleActorAnimation(actor_id);
+    }
+
     /// Applies queued scene commands and clears the command queue.
     pub fn applyCommands(self: *Scene) void {
         for (self.commands.items()) |command| {
@@ -542,6 +616,24 @@ pub const Scene = struct {
                     if (self.actor(set.actor)) |actor_data| {
                         actor_data.velocity = set.velocity;
                     }
+                },
+                .set_actor_rotation => |set| {
+                    self.setActorRotation(set.actor, set.rotation_radians);
+                },
+                .rotate_actor => |rotate| {
+                    self.rotateActor(rotate.actor, rotate.radians);
+                },
+                .set_actor_layer => |set| {
+                    self.setActorLayer(set.actor, set.layer);
+                },
+                .set_actor_tag => |set| {
+                    self.setActorTag(set.actor, set.tag);
+                },
+                .reset_actor_animation => |actor_id| {
+                    self.resetActorAnimation(actor_id);
+                },
+                .toggle_actor_animation => |actor_id| {
+                    self.toggleActorAnimation(actor_id);
                 },
             }
         }
@@ -587,6 +679,21 @@ fn scaledVelocity(velocity: render2d.Vector2, dt_seconds: f32) render2d.Vector2 
         velocity.x * dt_seconds,
         velocity.y * dt_seconds,
     );
+}
+
+/// Wraps radians into the 0..tau interval.
+fn wrapRadians(radians: f32) f32 {
+    var result = radians;
+
+    while (result >= std.math.tau) {
+        result -= std.math.tau;
+    }
+
+    while (result < 0.0) {
+        result += std.math.tau;
+    }
+
+    return result;
 }
 
 test "scene registers and finds prefabs" {
@@ -1325,4 +1432,121 @@ test "scene actor snapshot filter can exclude actor" {
 
     const only = snapshots.first() orelse return error.ExpectedSnapshot;
     try std.testing.expect(only.id.eql(second));
+}
+
+test "scene direct actor mutation helpers update snapshot state" {
+    const first_tag = ActorTag.fromIndex(100);
+    const second_tag = ActorTag.fromIndex(101);
+
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "mutation.actor",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = first_tag,
+        .layer = 2,
+    });
+
+    const actor_id = try scene.spawn(prefab_id, .{});
+
+    scene.setPosition(actor_id, render2d.Vector2.xy(10.0, 20.0));
+    scene.setVelocity(actor_id, render2d.Vector2.xy(3.0, -4.0));
+    scene.setActorRotation(actor_id, 1.0);
+    scene.rotateActor(actor_id, 0.5);
+    scene.setActorLayer(actor_id, 9);
+    scene.setActorTag(actor_id, second_tag);
+
+    const snapshot = scene.actorSnapshot(actor_id) orelse return error.ExpectedSnapshot;
+
+    try std.testing.expectEqual(@as(f32, 10.0), snapshot.position.x);
+    try std.testing.expectEqual(@as(f32, 20.0), snapshot.position.y);
+    try std.testing.expectEqual(@as(f32, 3.0), snapshot.velocity.x);
+    try std.testing.expectEqual(@as(f32, -4.0), snapshot.velocity.y);
+    try std.testing.expectEqual(@as(f32, 1.5), snapshot.rotation_radians);
+    try std.testing.expectEqual(@as(i32, 9), snapshot.layer);
+    try std.testing.expect(snapshot.hasTag(second_tag));
+}
+
+test "scene applies queued actor transform commands" {
+    const first_tag = ActorTag.fromIndex(102);
+    const second_tag = ActorTag.fromIndex(103);
+
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "queued.mutation.actor",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .tag = first_tag,
+    });
+
+    const actor_id = try scene.spawn(prefab_id, .{});
+
+    try scene.queueSetActorPosition(actor_id, render2d.Vector2.xy(30.0, 40.0));
+    try scene.queueSetActorVelocity(actor_id, render2d.Vector2.xy(5.0, 6.0));
+    try scene.queueSetActorRotation(actor_id, 0.25);
+    try scene.queueRotateActor(actor_id, 0.75);
+    try scene.queueSetActorLayer(actor_id, 12);
+    try scene.queueSetActorTag(actor_id, second_tag);
+
+    scene.finishFrame();
+
+    const snapshot = scene.actorSnapshot(actor_id) orelse return error.ExpectedSnapshot;
+
+    try std.testing.expectEqual(@as(f32, 30.0), snapshot.position.x);
+    try std.testing.expectEqual(@as(f32, 40.0), snapshot.position.y);
+    try std.testing.expectEqual(@as(f32, 5.0), snapshot.velocity.x);
+    try std.testing.expectEqual(@as(f32, 6.0), snapshot.velocity.y);
+    try std.testing.expectEqual(@as(f32, 1.0), snapshot.rotation_radians);
+    try std.testing.expectEqual(@as(i32, 12), snapshot.layer);
+    try std.testing.expect(snapshot.hasTag(second_tag));
+    try std.testing.expectEqual(@as(usize, 0), scene.commandItems().len);
+}
+
+test "scene applies queued animation commands" {
+    var scene = Scene.init();
+
+    const atlas = render2d.TextureAtlas.init(render2d.TextureId.default(), 2, 1);
+    const animation = render2d.SpriteAnimation.init(
+        atlas,
+        0,
+        0,
+        2,
+        1,
+        1,
+        0.1,
+    );
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "animated.actor",
+        .size = render2d.Vector2.xy(8.0, 8.0),
+        .animation = animation,
+    });
+
+    const actor_id = try scene.spawn(prefab_id, .{});
+
+    scene.updateAnimations(0.2);
+
+    {
+        const actor_data = scene.actorConst(actor_id) orelse return error.ExpectedActor;
+        try std.testing.expect(actor_data.animation_player.?.elapsed_seconds > 0.0);
+        try std.testing.expect(actor_data.animation_player.?.playing);
+    }
+
+    try scene.queueResetActorAnimation(actor_id);
+    try scene.queueToggleActorAnimation(actor_id);
+    scene.finishFrame();
+
+    {
+        const actor_data = scene.actorConst(actor_id) orelse return error.ExpectedActor;
+        try std.testing.expectEqual(@as(f32, 0.0), actor_data.animation_player.?.elapsed_seconds);
+        try std.testing.expect(!actor_data.animation_player.?.playing);
+    }
+
+    try scene.queueToggleActorAnimation(actor_id);
+    scene.finishFrame();
+
+    {
+        const actor_data = scene.actorConst(actor_id) orelse return error.ExpectedActor;
+        try std.testing.expect(actor_data.animation_player.?.playing);
+    }
 }
