@@ -58,6 +58,39 @@ pub fn runHelloWindow() !void {
                     app.releaseInput();
                 },
 
+                // Mouse
+                c.SDL_EVENT_MOUSE_MOTION => {
+                    app.applyMouseMotion(event.motion.x, event.motion.y);
+                },
+                c.SDL_EVENT_MOUSE_BUTTON_DOWN, c.SDL_EVENT_MOUSE_BUTTON_UP => {
+                    const down = event.type == c.SDL_EVENT_MOUSE_BUTTON_DOWN;
+                    if (mouseButtonFromSdlButton(event.button.button)) |button| {
+                        app.applyMouseButton(
+                            button,
+                            down,
+                            event.button.x,
+                            event.button.y,
+                        );
+                    }
+                },
+                c.SDL_EVENT_MOUSE_WHEEL => {
+                    var wheel_x = event.wheel.x;
+                    var wheel_y = event.wheel.y;
+
+                    if (event.wheel.direction == c.SDL_MOUSEWHEEL_FLIPPED) {
+                        wheel_x = -wheel_x;
+                        wheel_y = -wheel_y;
+                    }
+
+                    app.applyMouseWheel(
+                        wheel_x,
+                        wheel_y,
+                        event.wheel.mouse_x,
+                        event.wheel.mouse_y,
+                    );
+                },
+
+                // Keyboard
                 c.SDL_EVENT_KEY_DOWN, c.SDL_EVENT_KEY_UP => {
                     const pressed = event.type == c.SDL_EVENT_KEY_DOWN;
                     const repeated = event.key.repeat;
@@ -95,7 +128,7 @@ pub fn runHelloWindow() !void {
             );
         }
 
-        app.update(dt_seconds);
+        app.update(dt_seconds, gpu.width, gpu.height);
 
         if (app.shouldQuit()) {
             running = false;
@@ -129,6 +162,18 @@ fn keyFromSdlKey(key: c.SDL_Keycode) ?input.Key {
 
         c.SDLK_F1 => .f1,
 
+        else => null,
+    };
+}
+
+/// Converts an SDL mouse button id into a Yuki mouse button.
+fn mouseButtonFromSdlButton(button: u8) ?input.MouseButton {
+    return switch (button) {
+        c.SDL_BUTTON_LEFT => .left,
+        c.SDL_BUTTON_MIDDLE => .middle,
+        c.SDL_BUTTON_RIGHT => .right,
+        c.SDL_BUTTON_X1 => .x1,
+        c.SDL_BUTTON_X2 => .x2,
         else => null,
     };
 }

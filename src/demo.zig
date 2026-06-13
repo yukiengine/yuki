@@ -37,6 +37,7 @@ const debug_solid_fill_color = render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.20);
 const debug_solid_outline_color = render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.90);
 const debug_player_color = render2d.ColorRgba.rgba(0.1, 1.0, 0.3, 0.95);
 const debug_marker_color = render2d.ColorRgba.rgba(0.2, 0.7, 1.0, 0.95);
+const debug_cursor_color = render2d.ColorRgba.rgba(1.0, 1.0, 0.2, 0.95);
 
 const marker_push_speed: f32 = 96.0;
 
@@ -112,6 +113,13 @@ pub const Input = struct {
     pause_animation_pressed: bool = false,
     reset_animation_pressed: bool = false,
     toggle_debug_pressed: bool = false,
+    mouse_screen: render2d.Vector2 = render2d.Vector2.xy(0.0, 0.0),
+    mouse_delta_screen: render2d.Vector2 = render2d.Vector2.xy(0.0, 0.0),
+    mouse_wheel: render2d.Vector2 = render2d.Vector2.xy(0.0, 0.0),
+    mouse_left_down: bool = false,
+    mouse_left_pressed: bool = false,
+    mouse_left_released: bool = false,
+    mouse_inside_surface: bool = false,
 
     pub fn fromState(state: *const input.State) Input {
         return .{
@@ -122,6 +130,13 @@ pub const Input = struct {
             .pause_animation_pressed = state.actionWasPressed(Controls.pause_animation),
             .reset_animation_pressed = state.actionWasPressed(Controls.reset_animation),
             .toggle_debug_pressed = state.actionWasPressed(Controls.toggle_debug),
+            .mouse_screen = state.mousePosition(),
+            .mouse_delta_screen = state.mouseDelta(),
+            .mouse_wheel = state.mouseWheel(),
+            .mouse_left_down = state.isMouseButtonDown(.left),
+            .mouse_left_pressed = state.wasMouseButtonPressed(.left),
+            .mouse_left_released = state.wasMouseButtonReleased(.left),
+            .mouse_inside_surface = state.isMouseInsideWindow(),
         };
     }
 };
@@ -134,6 +149,9 @@ pub const Demo = struct {
     tile_rules: tilemap.TileRules,
     tileset: tilemap.Tileset,
     show_collision_debug: bool = false,
+    cursor_world: render2d.Vector2 = render2d.Vector2.xy(0.0, 0.0),
+    cursor_on_screen: bool = false,
+    cursor_left_down: bool = false,
 
     /// Creates the demo scene, prefab catalog, and initial actors.
     pub fn init(player_animation: render2d.SpriteAnimation, debug_atlas: render2d.TextureAtlas) Demo {
@@ -187,7 +205,13 @@ pub const Demo = struct {
     }
 
     /// Advances demo simulation for one frame.
-    pub fn update(self: *Demo, input_state: Input, dt_seconds: f32) void {
+    pub fn update(
+        self: *Demo,
+        input_state: Input,
+        dt_seconds: f32,
+        surface_width: u32,
+        surface_height: u32,
+    ) void {
         self.scene.beginFrame();
 
         if (input_state.toggle_debug_pressed) {
@@ -229,11 +253,34 @@ pub const Demo = struct {
             self.camera_rig.follow(player.position);
         }
 
-        const zoom_speed: f32 = 1.5;
-        if (input_state.zoom_in) self.camera_rig.zoomTargetBy(zoom_speed * dt_seconds);
-        if (input_state.zoom_out) self.camera_rig.zoomTargetBy(-zoom_speed * dt_seconds);
+        const keyboard_zoom_speed: f32 = 1.5;
+        if (input_state.zoom_in) {
+            self.camera_rig.zoomTargetBy(keyboard_zoom_speed * dt_seconds);
+        }
+        if (input_state.zoom_out) {
+            self.camera_rig.zoomTargetBy(-keyboard_zoom_speed * dt_seconds);
+        }
+
+        if (input_state.mouse_wheel.y != 0.0) {
+            const wheel_zoom_step: f32 = 0.25;
+            self.camera_rig.zoomAroundScreenPoint(
+                input_state.mouse_screen,
+                surface_width,
+                surface_height,
+                self.camera_rig.target_zoom + input_state.mouse_wheel.y *
+                    wheel_zoom_step,
+            );
+        }
 
         self.camera_rig.update(dt_seconds);
+
+        self.cursor_on_screen = input_state.mouse_inside_surface;
+        self.cursor_left_down = input_state.mouse_left_down;
+        self.cursor_world = self.camera_rig.screenToWorld(
+            input_state.mouse_screen,
+            surface_width,
+            surface_height,
+        );
     }
 
     /// Returns the current unclamped camera.
@@ -368,6 +415,16 @@ pub const Demo = struct {
             16.0,
             debug_player_color,
         );
+
+        if (self.cursor_on_screen) {
+            const cursor_size: f32 = if (self.cursor_left_down) 18.0 else 10.0;
+
+            try debug.cross(
+                self.cursor_world,
+                cursor_size,
+                debug_cursor_color,
+            );
+        }
     }
 
     /// Converts scene events into deferred demo commands.

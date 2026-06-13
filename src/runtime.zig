@@ -89,7 +89,8 @@ pub const App = struct {
         );
     }
 
-    pub fn update(self: *App, dt_seconds: f32) void {
+    /// Advances app state by one frame.
+    pub fn update(self: *App, dt_seconds: f32, surface_width: u32, surface_height: u32) void {
         if (self.input_state.actionWasPressed(demo.Controls.quit)) {
             self.requestQuit();
         }
@@ -97,7 +98,12 @@ pub const App = struct {
         if (self.quit_requested) return;
 
         const frame_input = demo.Input.fromState(&self.input_state);
-        self.demo_state.update(frame_input, dt_seconds);
+        self.demo_state.update(
+            frame_input,
+            dt_seconds,
+            surface_width,
+            surface_height,
+        );
     }
 
     pub fn render(self: *App, gpu: *wgpu.Gpu) !void {
@@ -118,6 +124,34 @@ pub const App = struct {
         );
 
         try gpu.render(frame);
+    }
+
+    /// Applies mouse motion from the platform layer.
+    pub fn applyMouseMotion(self: *App, x: f32, y: f32) void {
+        self.input_state.setMousePosition(input.Vector2.xy(x, y));
+    }
+
+    /// Applies one mouse button event from the platform layer.
+    pub fn applyMouseButton(
+        self: *App,
+        button: input.MouseButton,
+        down: bool,
+        x: f32,
+        y: f32,
+    ) void {
+        self.input_state.setMouseButton(
+            button,
+            down,
+            input.Vector2.xy(x, y),
+        );
+    }
+
+    /// Applies mouse wheel movement from the platform layer.
+    pub fn applyMouseWheel(self: *App, x: f32, y: f32, mouse_x: f32, mouse_y: f32) void {
+        self.input_state.addMouseWheel(
+            input.Vector2.xy(x, y),
+            input.Vector2.xy(mouse_x, mouse_y),
+        );
     }
 };
 
