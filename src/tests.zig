@@ -8,6 +8,7 @@ test {
     _ = @import("scene2d.zig");
     _ = @import("scene2d_tests.zig");
     _ = @import("tilemap.zig");
+    _ = @import("tilemap_tests.zig");
     _ = @import("time.zig");
     _ = @import("world2d.zig");
     _ = @import("event_reader2d.zig");
