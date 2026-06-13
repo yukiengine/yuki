@@ -4,6 +4,7 @@ test {
     _ = @import("commands2d.zig");
     _ = @import("events2d.zig");
     _ = @import("input.zig");
+    _ = @import("input_tests.zig");
     _ = @import("prefab2d.zig");
     _ = @import("scene2d.zig");
     _ = @import("scene2d_tests.zig");

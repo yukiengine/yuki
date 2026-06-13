@@ -1,0 +1,10 @@
+//! Input behavior test aggregator.
+//!
+//! Keep the input runtime file focused by grouping digital, mapping, and mouse
+//! behavior tests by subsystem concern.
+
+test {
+    _ = @import("input_digital_tests.zig");
+    _ = @import("input_map_tests.zig");
+    _ = @import("input_mouse_tests.zig");
+}
