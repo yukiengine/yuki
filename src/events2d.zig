@@ -284,3 +284,207 @@ pub const EventQueue = struct {
         return self.event_count;
     }
 };
+
+test "event kind classifies actor overlap kinds" {
+    try std.testing.expect(EventKind.actor_overlap.isActorOverlap());
+    try std.testing.expect(EventKind.actor_overlap_begin.isActorOverlap());
+    try std.testing.expect(EventKind.actor_overlap_stay.isActorOverlap());
+    try std.testing.expect(EventKind.actor_overlap_end.isActorOverlap());
+
+    try std.testing.expect(!EventKind.actor_overlap.isActorOverlapTransition());
+    try std.testing.expect(EventKind.actor_overlap_begin.isActorOverlapTransition());
+    try std.testing.expect(EventKind.actor_overlap_stay.isActorOverlapTransition());
+    try std.testing.expect(EventKind.actor_overlap_end.isActorOverlapTransition());
+
+    try std.testing.expect(EventKind.actor_overlap.isActiveActorOverlap());
+    try std.testing.expect(EventKind.actor_overlap_begin.isActiveActorOverlap());
+    try std.testing.expect(EventKind.actor_overlap_stay.isActiveActorOverlap());
+    try std.testing.expect(!EventKind.actor_overlap_end.isActiveActorOverlap());
+}
+
+test "actor overlap payload matches actors and tags" {
+    const actor = world2d.ActorId{ .index = 1, .generation = 1 };
+    const other = world2d.ActorId{ .index = 2, .generation = 1 };
+    const missing = world2d.ActorId{ .index = 3, .generation = 1 };
+    const actor_tag = world2d.ActorTag.fromIndex(10);
+    const other_tag = world2d.ActorTag.fromIndex(11);
+    const missing_tag = world2d.ActorTag.fromIndex(12);
+
+    const payload = ActorOverlapEvent{
+        .actor = actor,
+        .other = other,
+        .actor_tag = actor_tag,
+        .other_tag = other_tag,
+    };
+
+    try std.testing.expect(payload.hasActor(actor));
+    try std.testing.expect(!payload.hasActor(other));
+    try std.testing.expect(!payload.hasActor(missing));
+
+    try std.testing.expect(payload.hasOther(other));
+    try std.testing.expect(!payload.hasOther(actor));
+    try std.testing.expect(!payload.hasOther(missing));
+
+    try std.testing.expect(payload.hasActorTag(actor_tag));
+    try std.testing.expect(!payload.hasActorTag(other_tag));
+    try std.testing.expect(!payload.hasActorTag(missing_tag));
+
+    try std.testing.expect(payload.hasOtherTag(other_tag));
+    try std.testing.expect(!payload.hasOtherTag(actor_tag));
+    try std.testing.expect(!payload.hasOtherTag(missing_tag));
+}
+
+test "actor overlap event constructors set tagged union kind" {
+    const actor = world2d.ActorId{ .index = 1, .generation = 1 };
+    const other = world2d.ActorId{ .index = 2, .generation = 1 };
+    const actor_tag = world2d.ActorTag.fromIndex(20);
+    const other_tag = world2d.ActorTag.fromIndex(21);
+
+    const overlap = Event.actorOverlap(actor, actor_tag, other, other_tag);
+    const begin = Event.actorOverlapBegin(actor, actor_tag, other, other_tag);
+    const stay = Event.actorOverlapStay(actor, actor_tag, other, other_tag);
+    const end = Event.actorOverlapEnd(actor, actor_tag, other, other_tag);
+
+    try std.testing.expectEqual(EventKind.actor_overlap, overlap.kind());
+    try std.testing.expectEqual(EventKind.actor_overlap_begin, begin.kind());
+    try std.testing.expectEqual(EventKind.actor_overlap_stay, stay.kind());
+    try std.testing.expectEqual(EventKind.actor_overlap_end, end.kind());
+
+    try std.testing.expect(overlap.isActorOverlap());
+    try std.testing.expect(begin.isActorOverlap());
+    try std.testing.expect(stay.isActorOverlap());
+    try std.testing.expect(end.isActorOverlap());
+
+    try std.testing.expect(!overlap.isActorOverlapTransition());
+    try std.testing.expect(begin.isActorOverlapTransition());
+    try std.testing.expect(stay.isActorOverlapTransition());
+    try std.testing.expect(end.isActorOverlapTransition());
+
+    try std.testing.expect(overlap.isActiveActorOverlap());
+    try std.testing.expect(begin.isActiveActorOverlap());
+    try std.testing.expect(stay.isActiveActorOverlap());
+    try std.testing.expect(!end.isActiveActorOverlap());
+}
+
+test "actor overlap event exposes payload through helper" {
+    const actor = world2d.ActorId{ .index = 4, .generation = 2 };
+    const other = world2d.ActorId{ .index = 8, .generation = 3 };
+    const actor_tag = world2d.ActorTag.fromIndex(30);
+    const other_tag = world2d.ActorTag.fromIndex(31);
+
+    const event = Event.actorOverlapKind(
+        .actor_overlap_begin,
+        actor,
+        actor_tag,
+        other,
+        other_tag,
+    );
+
+    const payload = event.actorOverlapOrNull() orelse return error.ExpectedPayload;
+
+    try std.testing.expectEqual(EventKind.actor_overlap_begin, event.kind());
+    try std.testing.expect(payload.actor.eql(actor));
+    try std.testing.expect(payload.other.eql(other));
+    try std.testing.expect(payload.actor_tag.eql(actor_tag));
+    try std.testing.expect(payload.other_tag.eql(other_tag));
+}
+
+test "event queue stores actor overlap events" {
+    const actor = world2d.ActorId{ .index = 1, .generation = 1 };
+    const other = world2d.ActorId{ .index = 2, .generation = 1 };
+    const actor_tag = world2d.ActorTag.fromIndex(40);
+    const other_tag = world2d.ActorTag.fromIndex(41);
+
+    var queue = EventQueue.init();
+
+    try std.testing.expect(queue.isEmpty());
+    try std.testing.expectEqual(@as(usize, 0), queue.count());
+
+    try queue.pushActorOverlap(actor, actor_tag, other, other_tag);
+
+    try std.testing.expect(!queue.isEmpty());
+    try std.testing.expectEqual(@as(usize, 1), queue.count());
+    try std.testing.expectEqual(@as(usize, 1), queue.items().len);
+    try std.testing.expectEqual(@as(usize, 1), queue.countKind(.actor_overlap));
+
+    const event = queue.firstKind(.actor_overlap) orelse return error.ExpectedEvent;
+    const payload = event.actorOverlapOrNull() orelse return error.ExpectedPayload;
+
+    try std.testing.expect(payload.actor.eql(actor));
+    try std.testing.expect(payload.other.eql(other));
+    try std.testing.expect(payload.actor_tag.eql(actor_tag));
+    try std.testing.expect(payload.other_tag.eql(other_tag));
+}
+
+test "event queue stores overlap transition events" {
+    const actor = world2d.ActorId{ .index = 1, .generation = 1 };
+    const other = world2d.ActorId{ .index = 2, .generation = 1 };
+    const actor_tag = world2d.ActorTag.fromIndex(50);
+    const other_tag = world2d.ActorTag.fromIndex(51);
+
+    var queue = EventQueue.init();
+
+    try queue.pushActorOverlapKind(.actor_overlap_begin, actor, actor_tag, other, other_tag);
+    try queue.pushActorOverlapKind(.actor_overlap_stay, actor, actor_tag, other, other_tag);
+    try queue.pushActorOverlapKind(.actor_overlap_end, actor, actor_tag, other, other_tag);
+
+    try std.testing.expectEqual(@as(usize, 3), queue.count());
+    try std.testing.expectEqual(@as(usize, 1), queue.countKind(.actor_overlap_begin));
+    try std.testing.expectEqual(@as(usize, 1), queue.countKind(.actor_overlap_stay));
+    try std.testing.expectEqual(@as(usize, 1), queue.countKind(.actor_overlap_end));
+    try std.testing.expectEqual(@as(usize, 0), queue.countKind(.actor_overlap));
+
+    const begin = queue.firstKind(.actor_overlap_begin) orelse return error.ExpectedEvent;
+    const stay = queue.firstKind(.actor_overlap_stay) orelse return error.ExpectedEvent;
+    const end = queue.firstKind(.actor_overlap_end) orelse return error.ExpectedEvent;
+
+    try std.testing.expect(begin.isActorOverlapBegin());
+    try std.testing.expect(stay.isActorOverlapStay());
+    try std.testing.expect(end.isActorOverlapEnd());
+}
+
+test "event queue clears events" {
+    var queue = EventQueue.init();
+
+    try queue.pushActorOverlap(
+        .{ .index = 1, .generation = 1 },
+        world2d.ActorTag.fromIndex(60),
+        .{ .index = 2, .generation = 1 },
+        world2d.ActorTag.fromIndex(61),
+    );
+
+    try std.testing.expectEqual(@as(usize, 1), queue.count());
+
+    queue.clear();
+
+    try std.testing.expect(queue.isEmpty());
+    try std.testing.expectEqual(@as(usize, 0), queue.count());
+    try std.testing.expectEqual(@as(usize, 0), queue.items().len);
+    try std.testing.expect(queue.firstKind(.actor_overlap) == null);
+}
+
+test "event queue reports full capacity" {
+    var queue = EventQueue.init();
+
+    var index: usize = 0;
+    while (index < max_events) : (index += 1) {
+        try queue.pushActorOverlap(
+            .{ .index = @intCast(index), .generation = 1 },
+            world2d.ActorTag.fromIndex(70),
+            .{ .index = @intCast(index + 1), .generation = 1 },
+            world2d.ActorTag.fromIndex(71),
+        );
+    }
+
+    try std.testing.expectEqual(max_events, queue.count());
+
+    try std.testing.expectError(
+        Error.EventQueueFull,
+        queue.pushActorOverlap(
+            .{ .index = 1000, .generation = 1 },
+            world2d.ActorTag.fromIndex(70),
+            .{ .index = 1001, .generation = 1 },
+            world2d.ActorTag.fromIndex(71),
+        ),
+    );
+}
