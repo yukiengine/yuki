@@ -8,6 +8,7 @@ const commands2d = @import("commands2d.zig");
 const overlaps2d = @import("overlaps2d.zig");
 const event_reader2d = @import("event_reader2d.zig");
 const actor_view2d = @import("actor_view2d.zig");
+const picking2d = @import("picking2d.zig");
 
 /// Public 2D scene command.
 pub const Command = commands2d.Command;
@@ -72,8 +73,17 @@ pub const ActorSnapshotList = actor_view2d.ActorSnapshotList;
 /// Filter used by scene event readers for actor lifecycle events.
 pub const ActorLifecycleFilter = event_reader2d.ActorLifecycleFilter;
 
+/// Public actor point-picking filter.
+pub const ActorPickFilter = picking2d.ActorPickFilter;
+
+/// Public actor point-picking hit.
+pub const ActorPickHit = picking2d.ActorPickHit;
+
+/// Public bounded actor point-picking result.
+pub const ActorPickResult = picking2d.ActorPickResult;
+
 pub const Error = prefab2d.Error || events2d.Error || commands2d.Error ||
-    overlaps2d.Error || actor_view2d.Error;
+    overlaps2d.Error || actor_view2d.Error || picking2d.Error;
 
 /// Counts frame-local scene queues.
 pub const FrameQueues = struct {
@@ -278,6 +288,60 @@ pub const Scene = struct {
             if (!filter.matches(snapshot)) continue;
 
             try result.add(snapshot);
+        }
+    }
+
+    /// Returns the topmost actor snapshot under a world-space point.
+    pub fn topActorAtPoint(
+        self: *const Scene,
+        point: render2d.Vector2,
+        filter: ActorPickFilter,
+    ) ?ActorPickHit {
+        var best: ?ActorPickHit = null;
+
+        var index: usize = 0;
+        while (index < world2d.max_actors) : (index += 1) {
+            const actor_data = &self.world.actors[index];
+            if (!actor_data.active) continue;
+
+            const id = ActorId{
+                .index = @intCast(index),
+                .generation = actor_data.generation,
+            };
+
+            const snapshot = ActorSnapshot.fromActor(id, actor_data);
+            if (!filter.matches(point, snapshot)) continue;
+
+            const hit = ActorPickHit.init(point, snapshot);
+            if (best == null or hit.isAbove(best.?)) {
+                best = hit;
+            }
+        }
+
+        return best;
+    }
+
+    /// Writes every actor under a world-space point into a bounded result.
+    pub fn collectActorsAtPoint(
+        self: *const Scene,
+        point: render2d.Vector2,
+        filter: ActorPickFilter,
+        result: *ActorPickResult,
+    ) !void {
+        var index: usize = 0;
+        while (index < world2d.max_actors) : (index += 1) {
+            const actor_data = &self.world.actors[index];
+            if (!actor_data.active) continue;
+
+            const id = ActorId{
+                .index = @intCast(index),
+                .generation = actor_data.generation,
+            };
+
+            const snapshot = ActorSnapshot.fromActor(id, actor_data);
+            if (!filter.matches(point, snapshot)) continue;
+
+            try result.add(ActorPickHit.init(point, snapshot));
         }
     }
 
@@ -1635,4 +1699,72 @@ test "scene emits actor despawned event" {
 
     try std.testing.expect(payload.actor.eql(actor));
     try std.testing.expect(payload.tag.eql(enemy_tag));
+}
+
+test "scene picks top actor at point" {
+    const actor_tag = ActorTag.fromIndex(130);
+
+    var scene = Scene.init();
+
+    const low_prefab = try scene.registerPrefab(.{
+        .name = "pick.low",
+        .size = render2d.Vector2.xy(32.0, 32.0),
+        .layer = 0,
+        .tag = actor_tag,
+    });
+
+    const high_prefab = try scene.registerPrefab(.{
+        .name = "pick.high",
+        .size = render2d.Vector2.xy(32.0, 32.0),
+        .layer = 20,
+        .tag = actor_tag,
+    });
+
+    _ = try scene.spawn(low_prefab, .{
+        .position = render2d.Vector2.xy(0.0, 0.0),
+    });
+
+    const high = try scene.spawn(high_prefab, .{
+        .position = render2d.Vector2.xy(0.0, 0.0),
+    });
+
+    const hit = scene.topActorAtPoint(
+        render2d.Vector2.xy(0.0, 0.0),
+        ActorPickFilter.all().withTag(actor_tag),
+    ) orelse return error.ExpectedPickHit;
+
+    try std.testing.expect(hit.actor().eql(high));
+    try std.testing.expectEqual(@as(i32, 20), hit.layer());
+}
+
+test "scene collects actors at point" {
+    const actor_tag = ActorTag.fromIndex(131);
+
+    var scene = Scene.init();
+
+    const prefab_id = try scene.registerPrefab(.{
+        .name = "pick.collect",
+        .size = render2d.Vector2.xy(32.0, 32.0),
+        .tag = actor_tag,
+    });
+
+    const first = try scene.spawn(prefab_id, .{
+        .position = render2d.Vector2.xy(0.0, 0.0),
+    });
+
+    const second = try scene.spawn(prefab_id, .{
+        .position = render2d.Vector2.xy(8.0, 0.0),
+    });
+
+    var result = ActorPickResult.init();
+
+    try scene.collectActorsAtPoint(
+        render2d.Vector2.xy(4.0, 0.0),
+        ActorPickFilter.all().withTag(actor_tag),
+        &result,
+    );
+
+    try std.testing.expectEqual(@as(usize, 2), result.count());
+    try std.testing.expect(result.items()[0].actor().eql(first));
+    try std.testing.expect(result.items()[1].actor().eql(second));
 }

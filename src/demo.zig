@@ -38,6 +38,8 @@ const debug_solid_outline_color = render2d.ColorRgba.rgba(1.0, 0.1, 0.1, 0.90);
 const debug_player_color = render2d.ColorRgba.rgba(0.1, 1.0, 0.3, 0.95);
 const debug_marker_color = render2d.ColorRgba.rgba(0.2, 0.7, 1.0, 0.95);
 const debug_cursor_color = render2d.ColorRgba.rgba(1.0, 1.0, 0.2, 0.95);
+const debug_hover_color = render2d.ColorRgba.rgba(1.0, 1.0, 0.2, 0.95);
+const debug_selected_color = render2d.ColorRgba.rgba(0.2, 1.0, 0.9, 0.95);
 
 const marker_push_speed: f32 = 96.0;
 
@@ -152,6 +154,8 @@ pub const Demo = struct {
     cursor_world: render2d.Vector2 = render2d.Vector2.xy(0.0, 0.0),
     cursor_on_screen: bool = false,
     cursor_left_down: bool = false,
+    hovered_actor: ?scene2d.ActorId = null,
+    selected_actor: ?scene2d.ActorId = null,
 
     /// Creates the demo scene, prefab catalog, and initial actors.
     pub fn init(player_animation: render2d.SpriteAnimation, debug_atlas: render2d.TextureAtlas) Demo {
@@ -281,6 +285,23 @@ pub const Demo = struct {
             surface_width,
             surface_height,
         );
+
+        self.hovered_actor = null;
+
+        if (self.cursor_on_screen) {
+            if (self.scene.topActorAtPoint(
+                self.cursor_world,
+                scene2d.ActorPickFilter.all(),
+            )) |hit| {
+                self.hovered_actor = hit.actor();
+
+                if (input_state.mouse_left_pressed) {
+                    self.selected_actor = hit.actor();
+                }
+            } else if (input_state.mouse_left_pressed) {
+                self.selected_actor = null;
+            }
+        }
     }
 
     /// Returns the current unclamped camera.
@@ -419,11 +440,36 @@ pub const Demo = struct {
         if (self.cursor_on_screen) {
             const cursor_size: f32 = if (self.cursor_left_down) 18.0 else 10.0;
 
+            // Cursor cross
             try debug.cross(
                 self.cursor_world,
                 cursor_size,
                 debug_cursor_color,
             );
+
+            if (self.hovered_actor) |actor_id| {
+                if (self.scene.actorSnapshot(actor_id)) |hovered| {
+                    try debug.rectOutline(
+                        hovered.bounds,
+                        debug_hover_color,
+                    );
+                }
+            }
+
+            if (self.selected_actor) |actor_id| {
+                if (self.scene.actorSnapshot(actor_id)) |selected| {
+                    try debug.rectOutline(
+                        selected.bounds,
+                        debug_selected_color,
+                    );
+
+                    try debug.cross(
+                        selected.position,
+                        28.0,
+                        debug_selected_color,
+                    );
+                }
+            }
         }
     }
 
