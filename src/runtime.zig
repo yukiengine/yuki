@@ -3,6 +3,7 @@ const demo = @import("demo.zig");
 const input = @import("input.zig");
 const render2d = @import("render2d/renderer.zig");
 const wgpu = @import("backend/wgpu.zig");
+const camera2d = @import("camera2d.zig");
 
 pub const AppConfig = struct {
     player_texture_path: [:0]const u8 = "assets/player.bmp",
@@ -101,7 +102,8 @@ pub const App = struct {
 
     pub fn render(self: *App, gpu: *wgpu.Gpu) !void {
         const camera = self.demo_state.cameraForSurface(gpu.width, gpu.height);
-        const visible_world = camera.visibleWorldRect(gpu.width, gpu.height);
+        const viewport = camera2d.Viewport2D.init(camera, gpu.width, gpu.height);
+        const visible_world = viewport.visibleWorldRect();
 
         try self.demo_state.draw(
             &self.world_draw_list,
