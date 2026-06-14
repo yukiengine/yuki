@@ -12,7 +12,8 @@ test {
     _ = @import("router_tests.zig");
     _ = @import("map_tests.zig");
     _ = @import("mouse_tests.zig");
-    _ = @import("event_tests.zig");
+    _ = @import("events_tests.zig");
+    _ = @import("event_reader_tests.zig");
     _ = @import("frame_tests.zig");
     _ = @import("type_tests.zig");
     _ = @import("builder_tests.zig");
