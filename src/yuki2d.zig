@@ -11,7 +11,7 @@ pub const render = @import("render2d.zig");
 pub const input = @import("input/mod.zig");
 
 /// Public read-only input frame API.
-pub const input_frame = @import("input_frame.zig");
+pub const input_frame = @import("input/frame.zig");
 
 /// Public 2D camera helpers.
 pub const camera = @import("camera2d.zig");

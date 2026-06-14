@@ -4,7 +4,7 @@
 //! object that exposes polling state and frame-local events without exposing
 //! backend/platform details.
 
-const input = @import("input/mod.zig");
+const input = @import("mod.zig");
 
 /// Read-only view of resolved input state and frame-local input events.
 pub const Frame = struct {
