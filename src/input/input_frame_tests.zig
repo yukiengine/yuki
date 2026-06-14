@@ -4,7 +4,7 @@
 //! instead of reading raw input state and event queues directly.
 
 const std = @import("std");
-const yuki2d = @import("yuki2d.zig");
+const yuki2d = @import("../yuki2d.zig");
 
 const input = yuki2d.input;
 const input_frame = yuki2d.input_frame;

@@ -4,7 +4,7 @@
 //! that future Luau bindings should mirror.
 
 const std = @import("std");
-const yuki2d = @import("yuki2d.zig");
+const yuki2d = @import("../yuki2d.zig");
 
 const input = yuki2d.input;
 

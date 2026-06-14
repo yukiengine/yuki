@@ -3,7 +3,7 @@
 //! These tests cover the frame-local input event queue and router event output.
 
 const std = @import("std");
-const yuki2d = @import("yuki2d.zig");
+const yuki2d = @import("../yuki2d.zig");
 
 const input = yuki2d.input;
 
