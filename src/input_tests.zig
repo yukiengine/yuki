@@ -6,6 +6,7 @@
 test {
     _ = @import("input_digital_tests.zig");
     _ = @import("input_action_value_tests.zig");
+    _ = @import("input_action_map_tests.zig");
     _ = @import("input_map_tests.zig");
     _ = @import("input_mouse_tests.zig");
 }

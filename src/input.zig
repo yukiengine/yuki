@@ -521,11 +521,13 @@ pub const State = struct {
     }
 };
 
-pub const Binding = struct {
+/// Binds one key to one digital action.
+pub const DigitalKeyBinding = struct {
     key: Key,
-    action: ActionId,
+    action: DigitalActionId,
 
-    pub fn init(key: Key, action: ActionId) Binding {
+    /// Creates a digital key binding.
+    pub fn init(key: Key, action: DigitalActionId) DigitalKeyBinding {
         std.debug.assert(key != .count);
 
         return .{
@@ -534,33 +536,176 @@ pub const Binding = struct {
         };
     }
 
-    pub fn matches(self: Binding, key: Key) bool {
+    /// Returns true when this binding depends on the key.
+    pub fn matchesKey(self: DigitalKeyBinding, key: Key) bool {
         return self.key == key;
     }
 };
 
-pub const InputMap = struct {
+/// Binds two keys to one 1D axis action.
+pub const Axis1KeyBinding = struct {
+    negative: Key,
+    positive: Key,
+    action: Axis1ActionId,
+
+    /// Creates a keyboard binding for a 1D axis.
+    pub fn init(negative: Key, positive: Key, action: Axis1ActionId) Axis1KeyBinding {
+        std.debug.assert(negative != .count);
+        std.debug.assert(positive != .count);
+        std.debug.assert(negative != positive);
+
+        return .{
+            .negative = negative,
+            .positive = positive,
+            .action = action,
+        };
+    }
+
+    /// Returns true when this binding depends on the key.
+    pub fn matchesKey(self: Axis1KeyBinding, key: Key) bool {
+        return self.negative == key or self.positive == key;
+    }
+
+    /// Resolves the current axis value from key state.
+    pub fn valueFromState(self: Axis1KeyBinding, state: *const State) f32 {
+        return @floatFromInt(
+            boolToI32(state.isKeyDown(self.positive)) -
+                boolToI32(state.isKeyDown(self.negative)),
+        );
+    }
+};
+
+/// Binds four keys to one 2D axis action.
+pub const Axis2KeyBinding = struct {
+    left: Key,
+    right: Key,
+    up: Key,
+    down: Key,
+    action: Axis2ActionId,
+
+    /// Creates a keyboard binding for a 2D axis.
+    pub fn init(
+        left: Key,
+        right: Key,
+        up: Key,
+        down: Key,
+        action: Axis2ActionId,
+    ) Axis2KeyBinding {
+        std.debug.assert(left != .count);
+        std.debug.assert(right != .count);
+        std.debug.assert(up != .count);
+        std.debug.assert(down != .count);
+        std.debug.assert(left != right);
+        std.debug.assert(up != down);
+
+        return .{
+            .left = left,
+            .right = right,
+            .up = up,
+            .down = down,
+            .action = action,
+        };
+    }
+
+    /// Returns true when this binding depends on the key.
+    pub fn matchesKey(self: Axis2KeyBinding, key: Key) bool {
+        return self.left == key or
+            self.right == key or
+            self.up == key or
+            self.down == key;
+    }
+
+    /// Resolves the current axis value from key state.
+    pub fn valueFromState(self: Axis2KeyBinding, state: *const State) Vector2 {
+        return Vector2.xy(
+            @floatFromInt(boolToI32(state.isKeyDown(self.right)) -
+                boolToI32(state.isKeyDown(self.left))),
+            @floatFromInt(boolToI32(state.isKeyDown(self.down)) -
+                boolToI32(state.isKeyDown(self.up))),
+        );
+    }
+};
+
+/// One typed input binding inside an action map.
+pub const Binding = union(enum) {
+    digital_key: DigitalKeyBinding,
+    axis1_keys: Axis1KeyBinding,
+    axis2_keys: Axis2KeyBinding,
+
+    /// Returns true when this binding depends on the key.
+    pub fn matchesKey(self: Binding, key: Key) bool {
+        return switch (self) {
+            .digital_key => |binding| binding.matchesKey(key),
+            .axis1_keys => |binding| binding.matchesKey(key),
+            .axis2_keys => |binding| binding.matchesKey(key),
+        };
+    }
+};
+
+/// Named-map-ready collection of typed input bindings.
+pub const ActionMap = struct {
     bindings: [max_bindings]Binding,
     binding_count: usize,
 
-    pub fn init() InputMap {
+    /// Creates an empty action map.
+    pub fn init() ActionMap {
         return .{
             .bindings = undefined,
             .binding_count = 0,
         };
     }
 
-    pub fn bind(self: *InputMap, key: Key, action: ActionId) !void {
+    /// Adds one typed binding.
+    pub fn pushBinding(self: *ActionMap, binding: Binding) !void {
         if (self.binding_count == max_bindings) {
             return Error.InputMapFull;
         }
 
-        self.bindings[self.binding_count] = Binding.init(key, action);
+        self.bindings[self.binding_count] = binding;
         self.binding_count += 1;
     }
 
+    /// Binds one key to one digital action.
+    pub fn bindDigitalKey(self: *ActionMap, key: Key, action: DigitalActionId) !void {
+        try self.pushBinding(.{
+            .digital_key = DigitalKeyBinding.init(key, action),
+        });
+    }
+
+    /// Binds two keys to one 1D axis action.
+    pub fn bindAxis1Keys(
+        self: *ActionMap,
+        negative: Key,
+        positive: Key,
+        action: Axis1ActionId,
+    ) !void {
+        try self.pushBinding(.{
+            .axis1_keys = Axis1KeyBinding.init(negative, positive, action),
+        });
+    }
+
+    /// Binds four keys to one 2D axis action.
+    pub fn bindAxis2Keys(
+        self: *ActionMap,
+        left: Key,
+        right: Key,
+        up: Key,
+        down: Key,
+        action: Axis2ActionId,
+    ) !void {
+        try self.pushBinding(.{
+            .axis2_keys = Axis2KeyBinding.init(left, right, up, down, action),
+        });
+    }
+
+    /// Compatibility wrapper for the old digital-only input map API.
+    pub fn bind(self: *ActionMap, key: Key, action: ActionId) !void {
+        try self.bindDigitalKey(key, action);
+    }
+
+    /// Applies one key event and refreshes affected typed action values.
     pub fn applyKey(
-        self: *const InputMap,
+        self: *const ActionMap,
         state: *State,
         key: Key,
         down: bool,
@@ -571,29 +716,87 @@ pub const InputMap = struct {
         state.setKey(key, down);
 
         for (self.items()) |binding| {
-            if (!binding.matches(key)) continue;
-
-            self.syncAction(state, binding.action);
+            if (!binding.matchesKey(key)) continue;
+            self.syncBinding(state, binding);
         }
     }
 
-    pub fn items(self: *const InputMap) []const Binding {
+    /// Returns all bindings in this map.
+    pub fn items(self: *const ActionMap) []const Binding {
         return self.bindings[0..self.binding_count];
     }
 
-    fn syncAction(self: *const InputMap, state: *State, action: ActionId) void {
-        state.setActionDown(action, self.actionDownFromKeys(state, action));
+    /// Refreshes the action value affected by one binding.
+    fn syncBinding(self: *const ActionMap, state: *State, binding: Binding) void {
+        switch (binding) {
+            .digital_key => |digital| self.syncDigitalAction(state, digital.action),
+            .axis1_keys => |axis| self.syncAxis1Action(state, axis.action),
+            .axis2_keys => |axis| self.syncAxis2Action(state, axis.action),
+        }
     }
 
-    fn actionDownFromKeys(self: *const InputMap, state: *const State, action: ActionId) bool {
+    /// Refreshes one digital action from every matching digital binding.
+    fn syncDigitalAction(self: *const ActionMap, state: *State, action: DigitalActionId) void {
+        var down = false;
+
         for (self.items()) |binding| {
-            if (binding.action.index != action.index) continue;
-            if (state.isKeyDown(binding.key)) return true;
+            switch (binding) {
+                .digital_key => |digital| {
+                    if (digital.action.index != action.index) continue;
+                    if (state.isKeyDown(digital.key)) {
+                        down = true;
+                        break;
+                    }
+                },
+                else => {},
+            }
         }
 
-        return false;
+        state.setDigitalDown(action, down);
+    }
+
+    /// Refreshes one 1D axis action from every matching axis binding.
+    fn syncAxis1Action(self: *const ActionMap, state: *State, action: Axis1ActionId) void {
+        var value: f32 = 0.0;
+
+        for (self.items()) |binding| {
+            switch (binding) {
+                .axis1_keys => |axis| {
+                    if (axis.action.index != action.index) continue;
+                    value += axis.valueFromState(state);
+                },
+                else => {},
+            }
+        }
+
+        state.setAxis1(action, clampAxis1(value));
+    }
+
+    /// Refreshes one 2D axis action from every matching axis binding.
+    fn syncAxis2Action(self: *const ActionMap, state: *State, action: Axis2ActionId) void {
+        var value = Vector2.xy(0.0, 0.0);
+
+        for (self.items()) |binding| {
+            switch (binding) {
+                .axis2_keys => |axis| {
+                    if (axis.action.index != action.index) continue;
+
+                    const axis_value = axis.valueFromState(state);
+                    value = Vector2.xy(
+                        value.x + axis_value.x,
+                        value.y + axis_value.y,
+                    );
+                },
+                else => {},
+            }
+        }
+
+        state.setAxis2(action, clampAxis2(value));
     }
 };
+
+/// Compatibility alias while callers migrate from InputMap to ActionMap.
+pub const InputMap = ActionMap;
 
 fn keyIndex(key: Key) usize {
     std.debug.assert(key != .count);
@@ -608,6 +811,19 @@ fn actionIndex(action: ActionId) usize {
 
 fn boolToI32(value: bool) i32 {
     return if (value) 1 else 0;
+}
+
+fn clampAxis1(value: f32) f32 {
+    if (value < -1.0) return -1.0;
+    if (value > 1.0) return 1.0;
+    return value;
+}
+
+fn clampAxis2(value: Vector2) Vector2 {
+    return Vector2.xy(
+        clampAxis1(value.x),
+        clampAxis1(value.y),
+    );
 }
 
 /// Converts a mouse button enum into an array index.
