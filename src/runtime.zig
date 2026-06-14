@@ -28,6 +28,7 @@ pub const App = struct {
     texture_catalog: assets.TextureCatalog,
 
     input_state: input.State,
+    input_events: input.InputEventQueue,
     input_router: input.InputRouter,
 
     demo_state: demo.Demo,
@@ -49,6 +50,7 @@ pub const App = struct {
             .config = config,
             .texture_catalog = texture_catalog,
             .input_state = input.State.init(),
+            .input_events = input.InputEventQueue.init(),
             .input_router = demo.Controls.defaultInputRouter(),
             .demo_state = demo.Demo.init(
                 demo_assets.player_animation,
@@ -61,6 +63,7 @@ pub const App = struct {
 
     pub fn beginFrame(self: *App) void {
         self.input_state.beginFrame();
+        self.input_events.beginFrame();
         self.world_draw_list.beginFrame();
         self.screen_draw_list.beginFrame();
     }
@@ -84,8 +87,9 @@ pub const App = struct {
         down: bool,
         repeated: bool,
     ) void {
-        self.input_router.applyKey(
+        self.input_router.applyKeyWithEvents(
             &self.input_state,
+            &self.input_events,
             key,
             down,
             repeated,
@@ -155,6 +159,11 @@ pub const App = struct {
             input.Vector2.xy(x, y),
             input.Vector2.xy(mouse_x, mouse_y),
         );
+    }
+
+    /// Returns frame-local input events collected by the runtime.
+    pub fn inputEvents(self: *const App) []const input.InputEvent {
+        return self.input_events.items();
     }
 };
 
