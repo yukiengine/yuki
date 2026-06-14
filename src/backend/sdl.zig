@@ -1,7 +1,7 @@
 const std = @import("std");
 const wgpu = @import("wgpu.zig");
 const c = @import("sdl_c.zig").c;
-const input = @import("../input.zig");
+const input = @import("../input/mod.zig");
 const runtime = @import("../runtime.zig");
 const time = @import("../time.zig");
 

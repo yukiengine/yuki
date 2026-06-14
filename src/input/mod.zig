@@ -1,5 +1,5 @@
 const std = @import("std");
-const render_types = @import("render2d/types.zig");
+const render_types = @import("../render2d/types.zig");
 
 /// Shared 2D vector type used for pointer positions and deltas.
 pub const Vector2 = render_types.Vector2;

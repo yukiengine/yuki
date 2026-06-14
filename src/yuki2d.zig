@@ -8,7 +8,7 @@
 pub const render = @import("render2d.zig");
 
 /// Public input action and pointer state API.
-pub const input = @import("input.zig");
+pub const input = @import("input/mod.zig");
 
 /// Public read-only input frame API.
 pub const input_frame = @import("input_frame.zig");
