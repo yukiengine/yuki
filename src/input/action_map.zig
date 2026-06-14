@@ -3,10 +3,10 @@
 //! This module owns the developer-authored bindings that translate physical
 //! inputs into typed digital, 1D axis, and 2D axis actions.
 
-const std = @import("std");
 const types = @import("types.zig");
 const events = @import("events.zig");
 const state_mod = @import("state.zig");
+const bindings_mod = @import("bindings.zig");
 
 pub const Vector2 = types.Vector2;
 pub const Error = types.Error;
@@ -23,126 +23,10 @@ pub const InputSource = events.InputSource;
 pub const InputEventQueue = events.InputEventQueue;
 pub const State = state_mod.State;
 
-/// Binds one keyboard key to one digital action.
-pub const DigitalKeyBinding = struct {
-    key: Key,
-    action: DigitalActionId,
-
-    /// Creates a digital key binding.
-    pub fn init(key: Key, action: DigitalActionId) DigitalKeyBinding {
-        std.debug.assert(key != .count);
-
-        return .{
-            .key = key,
-            .action = action,
-        };
-    }
-
-    /// Returns true when this binding depends on the key.
-    pub fn matchesKey(self: DigitalKeyBinding, key: Key) bool {
-        return self.key == key;
-    }
-};
-
-/// Binds two keyboard keys to one one-dimensional axis action.
-pub const Axis1KeyBinding = struct {
-    negative: Key,
-    positive: Key,
-    action: Axis1ActionId,
-
-    /// Creates a keyboard binding for a 1D axis.
-    pub fn init(negative: Key, positive: Key, action: Axis1ActionId) Axis1KeyBinding {
-        std.debug.assert(negative != .count);
-        std.debug.assert(positive != .count);
-        std.debug.assert(negative != positive);
-
-        return .{
-            .negative = negative,
-            .positive = positive,
-            .action = action,
-        };
-    }
-
-    /// Returns true when this binding depends on the key.
-    pub fn matchesKey(self: Axis1KeyBinding, key: Key) bool {
-        return self.negative == key or self.positive == key;
-    }
-
-    /// Resolves the current axis value from key state.
-    pub fn valueFromState(self: Axis1KeyBinding, state: *const State) f32 {
-        return @floatFromInt(
-            boolToI32(state.isKeyDown(self.positive)) -
-                boolToI32(state.isKeyDown(self.negative)),
-        );
-    }
-};
-
-/// Binds four keyboard keys to one two-dimensional axis action.
-pub const Axis2KeyBinding = struct {
-    left: Key,
-    right: Key,
-    up: Key,
-    down: Key,
-    action: Axis2ActionId,
-
-    /// Creates a keyboard binding for a 2D axis.
-    pub fn init(
-        left: Key,
-        right: Key,
-        up: Key,
-        down: Key,
-        action: Axis2ActionId,
-    ) Axis2KeyBinding {
-        std.debug.assert(left != .count);
-        std.debug.assert(right != .count);
-        std.debug.assert(up != .count);
-        std.debug.assert(down != .count);
-        std.debug.assert(left != right);
-        std.debug.assert(up != down);
-
-        return .{
-            .left = left,
-            .right = right,
-            .up = up,
-            .down = down,
-            .action = action,
-        };
-    }
-
-    /// Returns true when this binding depends on the key.
-    pub fn matchesKey(self: Axis2KeyBinding, key: Key) bool {
-        return self.left == key or
-            self.right == key or
-            self.up == key or
-            self.down == key;
-    }
-
-    /// Resolves the current axis value from key state.
-    pub fn valueFromState(self: Axis2KeyBinding, state: *const State) Vector2 {
-        return Vector2.xy(
-            @floatFromInt(boolToI32(state.isKeyDown(self.right)) -
-                boolToI32(state.isKeyDown(self.left))),
-            @floatFromInt(boolToI32(state.isKeyDown(self.down)) -
-                boolToI32(state.isKeyDown(self.up))),
-        );
-    }
-};
-
-/// One typed input binding inside an action map.
-pub const Binding = union(enum) {
-    digital_key: DigitalKeyBinding,
-    axis1_keys: Axis1KeyBinding,
-    axis2_keys: Axis2KeyBinding,
-
-    /// Returns true when this binding depends on the key.
-    pub fn matchesKey(self: Binding, key: Key) bool {
-        return switch (self) {
-            .digital_key => |binding| binding.matchesKey(key),
-            .axis1_keys => |binding| binding.matchesKey(key),
-            .axis2_keys => |binding| binding.matchesKey(key),
-        };
-    }
-};
+pub const DigitalKeyBinding = bindings_mod.DigitalKeyBinding;
+pub const Axis1KeyBinding = bindings_mod.Axis1KeyBinding;
+pub const Axis2KeyBinding = bindings_mod.Axis2KeyBinding;
+pub const Binding = bindings_mod.Binding;
 
 /// Collection of typed input bindings for one gameplay/UI mode.
 pub const ActionMap = struct {
@@ -356,7 +240,7 @@ pub const ActionMap = struct {
         for (self.items()) |binding| {
             switch (binding) {
                 .digital_key => |digital| {
-                    if (digital.action.index != action.index) continue;
+                    if (!digital.matchesAction(action)) continue;
                     if (state.isKeyDown(digital.key)) {
                         down = true;
                         break;
@@ -376,7 +260,7 @@ pub const ActionMap = struct {
         for (self.items()) |binding| {
             switch (binding) {
                 .axis1_keys => |axis| {
-                    if (axis.action.index != action.index) continue;
+                    if (!axis.matchesAction(action)) continue;
                     value += axis.valueFromState(state);
                 },
                 else => {},
@@ -393,7 +277,7 @@ pub const ActionMap = struct {
         for (self.items()) |binding| {
             switch (binding) {
                 .axis2_keys => |axis| {
-                    if (axis.action.index != action.index) continue;
+                    if (!axis.matchesAction(action)) continue;
 
                     const axis_value = axis.valueFromState(state);
                     value = Vector2.xy(value.x + axis_value.x, value.y + axis_value.y);
@@ -408,11 +292,6 @@ pub const ActionMap = struct {
 
 /// Compatibility alias while callers migrate from InputMap to ActionMap.
 pub const InputMap = ActionMap;
-
-/// Converts a bool to a signed integer for axis math.
-fn boolToI32(value: bool) i32 {
-    return if (value) 1 else 0;
-}
 
 /// Clamps a one-dimensional input axis into the normalized range.
 fn clampAxis1(value: f32) f32 {
