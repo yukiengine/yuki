@@ -99,3 +99,6 @@ pub const InputEvent = input.InputEvent;
 
 /// Public owned input session.
 pub const InputSession = input.InputSession;
+
+/// Public input setup builder.
+pub const InputSessionBuilder = input.InputSessionBuilder;
