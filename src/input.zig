@@ -4,18 +4,50 @@ const render_types = @import("render2d/types.zig");
 /// Shared 2D vector type used for pointer positions and deltas.
 pub const Vector2 = render_types.Vector2;
 
-pub const max_actions = 64;
+pub const max_digital_actions = 64;
+pub const max_axis1_actions = 32;
+pub const max_axis2_actions = 32;
 pub const max_bindings = 64;
+
+/// Backwards-compatible alias while the input API migrates from generic actions.
+pub const max_actions = max_digital_actions;
 
 pub const Error = error{
     InputMapFull,
 };
 
-pub const ActionId = extern struct {
+/// Handle to a digital action with bool/down/pressed/released state.
+pub const DigitalActionId = extern struct {
     index: u16,
 
-    pub fn fromIndex(index: u16) ActionId {
-        std.debug.assert(index < max_actions);
+    /// Creates a digital action handle from a compact runtime index.
+    pub fn fromIndex(index: u16) DigitalActionId {
+        std.debug.assert(index < max_digital_actions);
+        return .{ .index = index };
+    }
+};
+
+/// Temporary compatibility alias for the old API.
+pub const ActionId = DigitalActionId;
+
+/// Handle to a one-dimensional action value.
+pub const Axis1ActionId = extern struct {
+    index: u16,
+
+    /// Creates a 1D axis action handle from a compact runtime index.
+    pub fn fromIndex(index: u16) Axis1ActionId {
+        std.debug.assert(index < max_axis1_actions);
+        return .{ .index = index };
+    }
+};
+
+/// Handle to a two-dimensional action value.
+pub const Axis2ActionId = extern struct {
+    index: u16,
+
+    /// Creates a 2D axis action handle from a compact runtime index.
+    pub fn fromIndex(index: u16) Axis2ActionId {
+        std.debug.assert(index < max_axis2_actions);
         return .{ .index = index };
     }
 };
@@ -84,6 +116,58 @@ const DigitalState = struct {
         self.down = false;
         self.pressed = false;
         self.released = was_down;
+    }
+};
+
+/// Frame-aware state for one f32 input axis.
+pub const Axis1State = struct {
+    value: f32 = 0.0,
+    previous: f32 = 0.0,
+    changed: bool = false,
+
+    /// Clears the one-frame changed edge and stores the current value as previous.
+    pub fn beginFrame(self: *Axis1State) void {
+        self.previous = self.value;
+        self.changed = false;
+    }
+
+    /// Sets the axis value and records whether it changed this frame.
+    pub fn setValue(self: *Axis1State, value: f32) void {
+        if (self.value == value) return;
+
+        self.value = value;
+        self.changed = true;
+    }
+
+    /// Resets the axis to neutral.
+    pub fn forceNeutral(self: *Axis1State) void {
+        self.setValue(0.0);
+    }
+};
+
+/// Frame-aware state for one Vector2 input axis.
+pub const Axis2State = struct {
+    value: Vector2 = Vector2.xy(0.0, 0.0),
+    previous: Vector2 = Vector2.xy(0.0, 0.0),
+    changed: bool = false,
+
+    /// Clears the one-frame changed edge and stores the current value as previous.
+    pub fn beginFrame(self: *Axis2State) void {
+        self.previous = self.value;
+        self.changed = false;
+    }
+
+    /// Sets the axis value and records whether it changed this frame.
+    pub fn setValue(self: *Axis2State, value: Vector2) void {
+        if (vector2Eql(self.value, value)) return;
+
+        self.value = value;
+        self.changed = true;
+    }
+
+    /// Resets the axis to neutral.
+    pub fn forceNeutral(self: *Axis2State) void {
+        self.setValue(Vector2.xy(0.0, 0.0));
     }
 };
 
@@ -184,52 +268,181 @@ pub const ActionState = DigitalState;
 
 pub const State = struct {
     keys: [key_count]KeyState,
-    actions: [max_actions]ActionState,
+    actions: [max_digital_actions]ActionState,
+    axis1_actions: [max_axis1_actions]Axis1State,
+    axis2_actions: [max_axis2_actions]Axis2State,
     mouse: MouseState,
 
-    /// Creates empty keyboard, action, and mouse state.
+    /// Creates empty keyboard, action, axis, and mouse state.
     pub fn init() State {
         return .{
             .keys = [_]KeyState{.{}} ** key_count,
-            .actions = [_]ActionState{.{}} ** max_actions,
+            .actions = [_]ActionState{.{}} ** max_digital_actions,
+            .axis1_actions = [_]Axis1State{.{}} ** max_axis1_actions,
+            .axis2_actions = [_]Axis2State{.{}} ** max_axis2_actions,
             .mouse = MouseState.init(),
         };
     }
 
     /// Clears one-frame input edges and pointer deltas.
     pub fn beginFrame(self: *State) void {
-        for (&self.keys) |*key| {
-            key.beginFrame();
-        }
-
-        for (&self.actions) |*action| {
-            action.beginFrame();
-        }
+        for (&self.keys) |*key| key.beginFrame();
+        for (&self.actions) |*action| action.beginFrame();
+        for (&self.axis1_actions) |*axis_value| axis_value.beginFrame();
+        for (&self.axis2_actions) |*axis_value| axis_value.beginFrame();
 
         self.mouse.beginFrame();
     }
 
-    /// Releases all held keys, actions, and mouse buttons.
+    /// Releases all held keys, actions, axes, and mouse buttons.
     pub fn releaseAll(self: *State) void {
-        for (&self.keys) |*key| {
-            key.forceRelease();
-        }
-
-        for (&self.actions) |*action| {
-            action.forceRelease();
-        }
+        for (&self.keys) |*key| key.forceRelease();
+        for (&self.actions) |*action| action.forceRelease();
+        for (&self.axis1_actions) |*axis_value| axis_value.forceNeutral();
+        for (&self.axis2_actions) |*axis_value| axis_value.forceNeutral();
 
         self.mouse.releaseAll();
+    }
+
+    /// Updates one digital action directly.
+    pub fn setDigitalDown(self: *State, action: DigitalActionId, down: bool) void {
+        self.digitalState(action).setDown(down);
+    }
+
+    /// Returns true while a digital action is held.
+    pub fn digitalDown(self: *const State, action: DigitalActionId) bool {
+        return self.digitalStateConst(action).down;
+    }
+
+    /// Returns true only on the frame a digital action was pressed.
+    pub fn digitalPressed(self: *const State, action: DigitalActionId) bool {
+        return self.digitalStateConst(action).pressed;
+    }
+
+    /// Returns true only on the frame a digital action was released.
+    pub fn digitalReleased(self: *const State, action: DigitalActionId) bool {
+        return self.digitalStateConst(action).released;
+    }
+
+    /// Updates one 1D axis action directly.
+    pub fn setAxis1(self: *State, action: Axis1ActionId, value: f32) void {
+        self.axis1State(action).setValue(value);
+    }
+
+    /// Returns the current value for a 1D axis action.
+    pub fn axis1(self: *const State, action: Axis1ActionId) f32 {
+        return self.axis1StateConst(action).value;
+    }
+
+    /// Returns the previous-frame value for a 1D axis action.
+    pub fn axis1Previous(self: *const State, action: Axis1ActionId) f32 {
+        return self.axis1StateConst(action).previous;
+    }
+
+    /// Returns true when a 1D axis changed this frame.
+    pub fn axis1Changed(self: *const State, action: Axis1ActionId) bool {
+        return self.axis1StateConst(action).changed;
+    }
+
+    /// Updates one 2D axis action directly.
+    pub fn setAxis2(self: *State, action: Axis2ActionId, value: Vector2) void {
+        self.axis2State(action).setValue(value);
+    }
+
+    /// Returns the current value for a 2D axis action.
+    pub fn axis2(self: *const State, action: Axis2ActionId) Vector2 {
+        return self.axis2StateConst(action).value;
+    }
+
+    /// Returns the previous-frame value for a 2D axis action.
+    pub fn axis2Previous(self: *const State, action: Axis2ActionId) Vector2 {
+        return self.axis2StateConst(action).previous;
+    }
+
+    /// Returns true when a 2D axis changed this frame.
+    pub fn axis2Changed(self: *const State, action: Axis2ActionId) bool {
+        return self.axis2StateConst(action).changed;
+    }
+
+    /// Returns -1.0, 0.0, or 1.0 from a negative and positive digital action pair.
+    pub fn digitalAxis1(self: *const State, negative: DigitalActionId, positive: DigitalActionId) f32 {
+        return @floatFromInt(boolToI32(self.digitalDown(positive)) -
+            boolToI32(self.digitalDown(negative)));
+    }
+
+    /// Returns a Vector2 from left/right/up/down digital action pairs.
+    pub fn digitalAxis2(
+        self: *const State,
+        left: DigitalActionId,
+        right: DigitalActionId,
+        up: DigitalActionId,
+        down: DigitalActionId,
+    ) Vector2 {
+        return Vector2.xy(
+            self.digitalAxis1(left, right),
+            self.digitalAxis1(up, down),
+        );
+    }
+
+    /// Compatibility wrapper for the old generic action setter.
+    pub fn setActionDown(self: *State, action: ActionId, down: bool) void {
+        self.setDigitalDown(action, down);
+    }
+
+    /// Compatibility wrapper for the old generic action held query.
+    pub fn isActionDown(self: *const State, action: ActionId) bool {
+        return self.digitalDown(action);
+    }
+
+    /// Compatibility wrapper for the old generic action pressed query.
+    pub fn actionWasPressed(self: *const State, action: ActionId) bool {
+        return self.digitalPressed(action);
+    }
+
+    /// Compatibility wrapper for the old generic action released query.
+    pub fn actionWasReleased(self: *const State, action: ActionId) bool {
+        return self.digitalReleased(action);
+    }
+
+    /// Compatibility wrapper for the old integer digital axis helper.
+    pub fn axis(self: *const State, negative: ActionId, positive: ActionId) i32 {
+        return boolToI32(self.isActionDown(positive)) -
+            boolToI32(self.isActionDown(negative));
+    }
+
+    /// Returns mutable state for a digital action.
+    fn digitalState(self: *State, action: DigitalActionId) *ActionState {
+        return &self.actions[digitalActionIndex(action)];
+    }
+
+    /// Returns readonly state for a digital action.
+    fn digitalStateConst(self: *const State, action: DigitalActionId) ActionState {
+        return self.actions[digitalActionIndex(action)];
+    }
+
+    /// Returns mutable state for a 1D axis action.
+    fn axis1State(self: *State, action: Axis1ActionId) *Axis1State {
+        return &self.axis1_actions[axis1ActionIndex(action)];
+    }
+
+    /// Returns readonly state for a 1D axis action.
+    fn axis1StateConst(self: *const State, action: Axis1ActionId) Axis1State {
+        return self.axis1_actions[axis1ActionIndex(action)];
+    }
+
+    /// Returns mutable state for a 2D axis action.
+    fn axis2State(self: *State, action: Axis2ActionId) *Axis2State {
+        return &self.axis2_actions[axis2ActionIndex(action)];
+    }
+
+    /// Returns readonly state for a 2D axis action.
+    fn axis2StateConst(self: *const State, action: Axis2ActionId) Axis2State {
+        return self.axis2_actions[axis2ActionIndex(action)];
     }
 
     /// Updates one keyboard key.
     pub fn setKey(self: *State, key: Key, down: bool) void {
         self.keyState(key).setDown(down);
-    }
-
-    /// Updates one action directly.
-    pub fn setActionDown(self: *State, action: ActionId, down: bool) void {
-        self.actionState(action).setDown(down);
     }
 
     /// Returns true while a key is held.
@@ -247,27 +460,6 @@ pub const State = struct {
         return self.keyStateConst(key).released;
     }
 
-    /// Returns true while an action is held.
-    pub fn isActionDown(self: *const State, action: ActionId) bool {
-        return self.actionStateConst(action).down;
-    }
-
-    /// Returns true only on the frame an action was pressed.
-    pub fn actionWasPressed(self: *const State, action: ActionId) bool {
-        return self.actionStateConst(action).pressed;
-    }
-
-    /// Returns true only on the frame an action was released.
-    pub fn actionWasReleased(self: *const State, action: ActionId) bool {
-        return self.actionStateConst(action).released;
-    }
-
-    /// Returns -1, 0, or 1 from a negative and positive action pair.
-    pub fn axis(self: *const State, negative: ActionId, positive: ActionId) i32 {
-        return boolToI32(self.isActionDown(positive)) -
-            boolToI32(self.isActionDown(negative));
-    }
-
     /// Returns mutable state for a key.
     fn keyState(self: *State, key: Key) *KeyState {
         return &self.keys[keyIndex(key)];
@@ -276,16 +468,6 @@ pub const State = struct {
     /// Returns readonly state for a key.
     fn keyStateConst(self: *const State, key: Key) KeyState {
         return self.keys[keyIndex(key)];
-    }
-
-    /// Returns mutable state for an action.
-    fn actionState(self: *State, action: ActionId) *ActionState {
-        return &self.actions[actionIndex(action)];
-    }
-
-    /// Returns readonly state for an action.
-    fn actionStateConst(self: *const State, action: ActionId) ActionState {
-        return self.actions[actionIndex(action)];
     }
 
     /// Updates the mouse pointer position.
@@ -432,4 +614,26 @@ fn boolToI32(value: bool) i32 {
 fn mouseButtonIndex(button: MouseButton) usize {
     std.debug.assert(button != .count);
     return @intFromEnum(button);
+}
+
+fn digitalActionIndex(action: DigitalActionId) usize {
+    const index: usize = @intCast(action.index);
+    std.debug.assert(index < max_digital_actions);
+    return index;
+}
+
+fn axis1ActionIndex(action: Axis1ActionId) usize {
+    const index: usize = @intCast(action.index);
+    std.debug.assert(index < max_axis1_actions);
+    return index;
+}
+
+fn axis2ActionIndex(action: Axis2ActionId) usize {
+    const index: usize = @intCast(action.index);
+    std.debug.assert(index < max_axis2_actions);
+    return index;
+}
+
+fn vector2Eql(lhs: Vector2, rhs: Vector2) bool {
+    return lhs.x == rhs.x and lhs.y == rhs.y;
 }
