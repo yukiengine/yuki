@@ -14,4 +14,5 @@ test {
     _ = @import("input_mouse_tests.zig");
     _ = @import("input_event_tests.zig");
     _ = @import("input_frame_tests.zig");
+    _ = @import("input_type_tests.zig");
 }
