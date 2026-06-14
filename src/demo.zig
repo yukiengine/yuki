@@ -87,34 +87,96 @@ pub const Controls = struct {
     pub const toggle_debug = input.DigitalActionId.fromIndex(9);
     pub const select = input.DigitalActionId.fromIndex(10);
 
-    /// Builds the demo gameplay action map.
+    /// Gameplay action map name.
+    pub const gameplay_map_name = "gameplay";
+
+    /// Named gameplay actions.
+    pub const move_left_name = "player.move_left";
+    pub const move_right_name = "player.move_right";
+    pub const move_up_name = "player.move_up";
+    pub const move_down_name = "player.move_down";
+    pub const zoom_in_name = "camera.zoom_in";
+    pub const zoom_out_name = "camera.zoom_out";
+    pub const pause_animation_name = "player.pause_animation";
+    pub const reset_animation_name = "player.reset_animation";
+    pub const quit_name = "app.quit";
+    pub const toggle_debug_name = "debug.toggle";
+    pub const select_name = "pointer.select";
+
+    /// Builds the named action registry for the demo controls.
+    pub fn defaultActionRegistry() input.ActionRegistry {
+        var registry = input.ActionRegistry.init();
+
+        const gameplay = registry.addMap(gameplay_map_name) catch unreachable;
+        std.debug.assert(gameplay.eql(gameplay_map));
+
+        const registered_move_left = registry.addDigital(gameplay, move_left_name) catch unreachable;
+        std.debug.assert(registered_move_left.index == move_left.index);
+
+        const registered_move_right = registry.addDigital(gameplay, move_right_name) catch unreachable;
+        std.debug.assert(registered_move_right.index == move_right.index);
+
+        const registered_move_up = registry.addDigital(gameplay, move_up_name) catch unreachable;
+        std.debug.assert(registered_move_up.index == move_up.index);
+
+        const registered_move_down = registry.addDigital(gameplay, move_down_name) catch unreachable;
+        std.debug.assert(registered_move_down.index == move_down.index);
+
+        const registered_zoom_in = registry.addDigital(gameplay, zoom_in_name) catch unreachable;
+        std.debug.assert(registered_zoom_in.index == zoom_in.index);
+
+        const registered_zoom_out = registry.addDigital(gameplay, zoom_out_name) catch unreachable;
+        std.debug.assert(registered_zoom_out.index == zoom_out.index);
+
+        const registered_pause_animation = registry.addDigital(gameplay, pause_animation_name) catch unreachable;
+        std.debug.assert(registered_pause_animation.index == pause_animation.index);
+
+        const registered_reset_animation = registry.addDigital(gameplay, reset_animation_name) catch unreachable;
+        std.debug.assert(registered_reset_animation.index == reset_animation.index);
+
+        const registered_quit = registry.addDigital(gameplay, quit_name) catch unreachable;
+        std.debug.assert(registered_quit.index == quit.index);
+
+        const registered_toggle_debug = registry.addDigital(gameplay, toggle_debug_name) catch unreachable;
+        std.debug.assert(registered_toggle_debug.index == toggle_debug.index);
+
+        const registered_select = registry.addDigital(gameplay, select_name) catch unreachable;
+        std.debug.assert(registered_select.index == select.index);
+
+        return registry;
+    }
+
+    /// Builds the demo gameplay action map from named control definitions.
     pub fn defaultActionMap() input.ActionMap {
-        var map = input.ActionMap.init();
+        var registry = defaultActionRegistry();
+        var builder = input.ActionMapBuilder.fromMapName(
+            &registry,
+            gameplay_map_name,
+        ) catch unreachable;
 
-        map.bindDigitalKey(.escape, quit) catch unreachable;
-        map.bindDigitalKey(.space, pause_animation) catch unreachable;
-        map.bindDigitalKey(.r, reset_animation) catch unreachable;
+        builder.bindDigitalKey(&registry, quit_name, .escape) catch unreachable;
+        builder.bindDigitalKey(&registry, pause_animation_name, .space) catch unreachable;
+        builder.bindDigitalKey(&registry, reset_animation_name, .r) catch unreachable;
 
-        map.bindDigitalKey(.a, move_left) catch unreachable;
-        map.bindDigitalKey(.left, move_left) catch unreachable;
+        builder.bindDigitalKey(&registry, move_left_name, .a) catch unreachable;
+        builder.bindDigitalKey(&registry, move_left_name, .left) catch unreachable;
 
-        map.bindDigitalKey(.d, move_right) catch unreachable;
-        map.bindDigitalKey(.right, move_right) catch unreachable;
+        builder.bindDigitalKey(&registry, move_right_name, .d) catch unreachable;
+        builder.bindDigitalKey(&registry, move_right_name, .right) catch unreachable;
 
-        map.bindDigitalKey(.w, move_up) catch unreachable;
-        map.bindDigitalKey(.up, move_up) catch unreachable;
+        builder.bindDigitalKey(&registry, move_up_name, .w) catch unreachable;
+        builder.bindDigitalKey(&registry, move_up_name, .up) catch unreachable;
 
-        map.bindDigitalKey(.s, move_down) catch unreachable;
-        map.bindDigitalKey(.down, move_down) catch unreachable;
+        builder.bindDigitalKey(&registry, move_down_name, .s) catch unreachable;
+        builder.bindDigitalKey(&registry, move_down_name, .down) catch unreachable;
 
-        map.bindDigitalKey(.q, zoom_out) catch unreachable;
-        map.bindDigitalKey(.e, zoom_in) catch unreachable;
+        builder.bindDigitalKey(&registry, zoom_out_name, .q) catch unreachable;
+        builder.bindDigitalKey(&registry, zoom_in_name, .e) catch unreachable;
 
-        map.bindDigitalKey(.f1, toggle_debug) catch unreachable;
+        builder.bindDigitalKey(&registry, toggle_debug_name, .f1) catch unreachable;
+        builder.bindMouseButton(&registry, select_name, .left) catch unreachable;
 
-        map.bindMouseButton(.left, select) catch unreachable;
-
-        return map;
+        return builder.build();
     }
 
     /// Compatibility helper while old call sites migrate from InputMap.
