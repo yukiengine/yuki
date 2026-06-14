@@ -96,3 +96,6 @@ pub const InputEventIterator = input_frame.EventIterator;
 
 /// Public frame-local input event.
 pub const InputEvent = input.InputEvent;
+
+/// Public owned input session.
+pub const InputSession = input.InputSession;

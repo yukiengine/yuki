@@ -8,6 +8,7 @@ const router_mod = @import("router.zig");
 const builder_mod = @import("builder.zig");
 const event_reader_mod = @import("event_reader.zig");
 const named_frame_mod = @import("named_frame.zig");
+const session_mod = @import("session.zig");
 
 pub const Vector2 = types.Vector2;
 
@@ -71,3 +72,4 @@ pub const ActionMapBuilder = builder_mod.ActionMapBuilder;
 pub const EventReader = event_reader_mod.EventReader;
 pub const EventIterator = event_reader_mod.EventIterator;
 pub const NamedFrame = named_frame_mod.NamedFrame;
+pub const InputSession = session_mod.InputSession;
