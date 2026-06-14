@@ -8,6 +8,7 @@ test {
     _ = @import("input_action_value_tests.zig");
     _ = @import("input_action_map_tests.zig");
     _ = @import("input_action_registry_tests.zig");
+    _ = @import("input_context_tests.zig");
     _ = @import("input_map_tests.zig");
     _ = @import("input_mouse_tests.zig");
 }
