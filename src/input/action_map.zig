@@ -18,6 +18,8 @@ pub const Axis1ActionId = types.Axis1ActionId;
 pub const Axis2ActionId = types.Axis2ActionId;
 pub const ActionMapId = types.ActionMapId;
 pub const Key = types.Key;
+pub const MouseButton = types.MouseButton;
+pub const MouseButtonBinding = bindings_mod.MouseButtonBinding;
 
 pub const InputSource = events.InputSource;
 pub const InputEventQueue = events.InputEventQueue;
@@ -55,6 +57,17 @@ pub const ActionMap = struct {
     pub fn bindDigitalKey(self: *ActionMap, key: Key, action: DigitalActionId) !void {
         try self.pushBinding(.{
             .digital_key = DigitalKeyBinding.init(key, action),
+        });
+    }
+
+    /// Binds one mouse button to one digital action.
+    pub fn bindMouseButton(
+        self: *ActionMap,
+        button: MouseButton,
+        action: DigitalActionId,
+    ) !void {
+        try self.pushBinding(.{
+            .mouse_button = MouseButtonBinding.init(button, action),
         });
     }
 
@@ -126,6 +139,41 @@ pub const ActionMap = struct {
         }
     }
 
+    /// Applies one mouse button event and refreshes affected digital actions.
+    pub fn applyMouseButton(
+        self: *const ActionMap,
+        state: *State,
+        button: MouseButton,
+        down: bool,
+        position: Vector2,
+    ) void {
+        state.setMouseButton(button, down, position);
+        self.syncMouseButton(state, button);
+    }
+
+    /// Refreshes action values affected by a mouse button already stored in State.
+    pub fn syncMouseButton(self: *const ActionMap, state: *State, button: MouseButton) void {
+        for (self.items()) |binding| {
+            if (!binding.matchesMouseButton(button)) continue;
+            self.syncBinding(state, binding);
+        }
+    }
+
+    /// Refreshes mouse-button action values and emits frame-local events.
+    pub fn syncMouseButtonWithEvents(
+        self: *const ActionMap,
+        state: *State,
+        input_event_queue: *InputEventQueue,
+        map: ActionMapId,
+        source: InputSource,
+        button: MouseButton,
+    ) void {
+        for (self.items()) |binding| {
+            if (!binding.matchesMouseButton(button)) continue;
+            self.syncBindingWithEvents(state, input_event_queue, map, source, binding);
+        }
+    }
+
     /// Returns all bindings in this map.
     pub fn items(self: *const ActionMap) []const Binding {
         return self.bindings[0..self.binding_count];
@@ -161,6 +209,13 @@ pub const ActionMap = struct {
                 map,
                 source,
                 axis.action,
+            ),
+            .mouse_button => |mouse| self.syncDigitalActionWithEvents(
+                state,
+                input_event_queue,
+                map,
+                source,
+                mouse.action,
             ),
         }
     }
@@ -230,6 +285,7 @@ pub const ActionMap = struct {
             .digital_key => |digital| self.syncDigitalAction(state, digital.action),
             .axis1_keys => |axis| self.syncAxis1Action(state, axis.action),
             .axis2_keys => |axis| self.syncAxis2Action(state, axis.action),
+            .mouse_button => |mouse| self.syncDigitalAction(state, mouse.action),
         }
     }
 
@@ -242,6 +298,13 @@ pub const ActionMap = struct {
                 .digital_key => |digital| {
                     if (!digital.matchesAction(action)) continue;
                     if (state.isKeyDown(digital.key)) {
+                        down = true;
+                        break;
+                    }
+                },
+                .mouse_button => |mouse| {
+                    if (!mouse.matchesAction(action)) continue;
+                    if (state.isMouseButtonDown(mouse.button)) {
                         down = true;
                         break;
                     }

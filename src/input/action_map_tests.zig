@@ -164,3 +164,55 @@ test "action map ignores repeated key events" {
     try std.testing.expect(!state.wasKeyPressed(.d));
     try std.testing.expect(!state.axis1Changed(move_x));
 }
+
+test "action map binds mouse button to digital action" {
+    const activate = DigitalActionId.fromIndex(0);
+
+    var map = ActionMap.init();
+    try map.bindMouseButton(.left, activate);
+
+    var state = State.init();
+
+    map.applyMouseButton(&state, .left, true, input.Vector2.xy(0.0, 0.0));
+    try std.testing.expect(state.isMouseButtonDown(.left));
+    try std.testing.expect(state.digitalDown(activate));
+    try std.testing.expect(state.digitalPressed(activate));
+
+    state.beginFrame();
+
+    map.applyMouseButton(&state, .left, false, input.Vector2.xy(0.0, 0.0));
+    try std.testing.expect(!state.isMouseButtonDown(.left));
+    try std.testing.expect(!state.digitalDown(activate));
+    try std.testing.expect(state.digitalReleased(activate));
+}
+
+test "action map keeps digital aliases down across key and mouse bindings" {
+    const activate = DigitalActionId.fromIndex(0);
+
+    var map = ActionMap.init();
+    try map.bindDigitalKey(.space, activate);
+    try map.bindMouseButton(.left, activate);
+
+    var state = State.init();
+
+    map.applyKey(&state, .space, true, false);
+    try std.testing.expect(state.digitalDown(activate));
+
+    state.beginFrame();
+
+    map.applyMouseButton(&state, .left, true, input.Vector2.xy(0.0, 0.0));
+    try std.testing.expect(state.digitalDown(activate));
+    try std.testing.expect(!state.digitalPressed(activate));
+
+    state.beginFrame();
+
+    map.applyKey(&state, .space, false, false);
+    try std.testing.expect(state.digitalDown(activate));
+    try std.testing.expect(!state.digitalReleased(activate));
+
+    state.beginFrame();
+
+    map.applyMouseButton(&state, .left, false, input.Vector2.xy(0.0, 0.0));
+    try std.testing.expect(!state.digitalDown(activate));
+    try std.testing.expect(state.digitalReleased(activate));
+}

@@ -12,7 +12,7 @@ pub const DigitalActionId = types.DigitalActionId;
 pub const Axis1ActionId = types.Axis1ActionId;
 pub const Axis2ActionId = types.Axis2ActionId;
 pub const Key = types.Key;
-
+pub const MouseButton = types.MouseButton;
 pub const State = state_mod.State;
 
 /// Binds one keyboard key to one digital action.
@@ -37,6 +37,32 @@ pub const DigitalKeyBinding = struct {
 
     /// Returns true when this binding writes to the action.
     pub fn matchesAction(self: DigitalKeyBinding, action: DigitalActionId) bool {
+        return self.action.index == action.index;
+    }
+};
+
+/// Binds one mouse button to one digital action.
+pub const MouseButtonBinding = struct {
+    button: MouseButton,
+    action: DigitalActionId,
+
+    /// Creates a mouse button binding.
+    pub fn init(button: MouseButton, action: DigitalActionId) MouseButtonBinding {
+        std.debug.assert(button != .count);
+
+        return .{
+            .button = button,
+            .action = action,
+        };
+    }
+
+    /// Returns true when this binding depends on the mouse button.
+    pub fn matchesButton(self: MouseButtonBinding, button: MouseButton) bool {
+        return self.button == button;
+    }
+
+    /// Returns true when this binding writes to the action.
+    pub fn matchesAction(self: MouseButtonBinding, action: DigitalActionId) bool {
         return self.action.index == action.index;
     }
 };
@@ -138,6 +164,7 @@ pub const Axis2KeyBinding = struct {
 /// One typed input binding inside an action map.
 pub const Binding = union(enum) {
     digital_key: DigitalKeyBinding,
+    mouse_button: MouseButtonBinding,
     axis1_keys: Axis1KeyBinding,
     axis2_keys: Axis2KeyBinding,
 
@@ -145,8 +172,19 @@ pub const Binding = union(enum) {
     pub fn matchesKey(self: Binding, key: Key) bool {
         return switch (self) {
             .digital_key => |binding| binding.matchesKey(key),
+            .mouse_button => false,
             .axis1_keys => |binding| binding.matchesKey(key),
             .axis2_keys => |binding| binding.matchesKey(key),
+        };
+    }
+
+    /// Returns true when this binding depends on the mouse button.
+    pub fn matchesMouseButton(self: Binding, button: MouseButton) bool {
+        return switch (self) {
+            .digital_key => false,
+            .mouse_button => |binding| binding.matchesButton(button),
+            .axis1_keys => false,
+            .axis2_keys => false,
         };
     }
 
@@ -154,6 +192,7 @@ pub const Binding = union(enum) {
     pub fn digitalAction(self: Binding) ?DigitalActionId {
         return switch (self) {
             .digital_key => |binding| binding.action,
+            .mouse_button => |binding| binding.action,
             else => null,
         };
     }

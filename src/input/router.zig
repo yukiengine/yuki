@@ -11,7 +11,8 @@ const action_map_mod = @import("action_map.zig");
 
 pub const Error = types.Error;
 pub const max_action_maps = types.max_action_maps;
-
+pub const Vector2 = types.Vector2;
+pub const MouseButton = types.MouseButton;
 pub const ActionMapId = types.ActionMapId;
 pub const Key = types.Key;
 
@@ -231,6 +232,46 @@ pub const InputRouter = struct {
         }
     }
 
+    /// Applies a mouse button event through every processable active map.
+    pub fn applyMouseButton(
+        self: *const InputRouter,
+        state: *State,
+        button: MouseButton,
+        down: bool,
+        position: Vector2,
+    ) !void {
+        state.setMouseButton(button, down, position);
+
+        for (self.context.processedItems()) |active| {
+            const map = self.maps.getConst(active.map) orelse return Error.UnknownActionMap;
+            map.syncMouseButton(state, button);
+        }
+    }
+
+    /// Applies a mouse button event through active maps and records input events.
+    pub fn applyMouseButtonWithEvents(
+        self: *const InputRouter,
+        state: *State,
+        input_event_queue: *InputEventQueue,
+        button: MouseButton,
+        down: bool,
+        position: Vector2,
+    ) !void {
+        state.setMouseButtonWithEvents(input_event_queue, button, down, position);
+
+        const source = InputSource.mouseButton(button);
+        for (self.context.processedItems()) |active| {
+            const map = self.maps.getConst(active.map) orelse return Error.UnknownActionMap;
+            map.syncMouseButtonWithEvents(
+                state,
+                input_event_queue,
+                active.map,
+                source,
+                button,
+            );
+        }
+    }
+
     /// Applies a key event to raw state and all installed maps, ignoring context.
     pub fn applyKeyToAllMaps(
         self: *const InputRouter,
@@ -245,6 +286,21 @@ pub const InputRouter = struct {
 
         for (self.maps.items()) |entry| {
             entry.map.syncKey(state, key);
+        }
+    }
+
+    /// Applies a mouse button event to raw state and all installed maps, ignoring context.
+    pub fn applyMouseButtonToAllMaps(
+        self: *const InputRouter,
+        state: *State,
+        button: MouseButton,
+        down: bool,
+        position: Vector2,
+    ) void {
+        state.setMouseButton(button, down, position);
+
+        for (self.maps.items()) |entry| {
+            entry.map.syncMouseButton(state, button);
         }
     }
 

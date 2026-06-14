@@ -152,12 +152,13 @@ pub const App = struct {
         x: f32,
         y: f32,
     ) void {
-        self.input_state.setMouseButtonWithEvents(
+        self.input_router.applyMouseButtonWithEvents(
+            &self.input_state,
             &self.input_events,
             button,
             down,
             input.Vector2.xy(x, y),
-        );
+        ) catch unreachable;
     }
 
     /// Applies mouse wheel movement from the platform layer.

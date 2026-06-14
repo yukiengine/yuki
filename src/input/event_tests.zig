@@ -441,3 +441,80 @@ test "input state emits mouse motion before wheel when wheel event has new posit
         else => return error.ExpectedMouseScrolled,
     }
 }
+
+test "input router emits mouse button action events" {
+    const gameplay = ActionMapId.fromIndex(0);
+    const activate = DigitalActionId.fromIndex(0);
+
+    var map = ActionMap.init();
+    try map.bindMouseButton(.left, activate);
+
+    var router = InputRouter.init();
+    try router.putMap(gameplay, map);
+    try router.pushMap(gameplay);
+
+    var state = State.init();
+    var events = InputEventQueue.init();
+
+    try router.applyMouseButtonWithEvents(
+        &state,
+        &events,
+        .left,
+        true,
+        Vector2.xy(0.0, 0.0),
+    );
+
+    try std.testing.expect(state.isMouseButtonDown(.left));
+    try std.testing.expect(state.digitalDown(activate));
+    try std.testing.expectEqual(@as(usize, 2), events.count());
+
+    switch (events.items()[0]) {
+        .mouse_button_pressed => |event| {
+            try std.testing.expectEqual(input.MouseButton.left, event.button);
+            try std.testing.expectEqual(InputSourceKind.mouse, event.source.kind);
+            try std.testing.expectEqual(input.MouseButton.left, event.source.mouse_button.?);
+        },
+        else => return error.ExpectedMouseButtonPressed,
+    }
+
+    switch (events.items()[1]) {
+        .action_pressed => |event| {
+            try std.testing.expect(event.map.eql(gameplay));
+            try std.testing.expectEqual(activate.index, event.action.index);
+            try std.testing.expectEqual(InputSourceKind.mouse, event.source.kind);
+            try std.testing.expectEqual(input.MouseButton.left, event.source.mouse_button.?);
+        },
+        else => return error.ExpectedActionPressed,
+    }
+
+    state.beginFrame();
+    events.beginFrame();
+
+    try router.applyMouseButtonWithEvents(
+        &state,
+        &events,
+        .left,
+        false,
+        Vector2.xy(0.0, 0.0),
+    );
+
+    try std.testing.expect(!state.isMouseButtonDown(.left));
+    try std.testing.expect(!state.digitalDown(activate));
+    try std.testing.expectEqual(@as(usize, 2), events.count());
+
+    switch (events.items()[0]) {
+        .mouse_button_released => |event| {
+            try std.testing.expectEqual(input.MouseButton.left, event.button);
+        },
+        else => return error.ExpectedMouseButtonReleased,
+    }
+
+    switch (events.items()[1]) {
+        .action_released => |event| {
+            try std.testing.expect(event.map.eql(gameplay));
+            try std.testing.expectEqual(activate.index, event.action.index);
+            try std.testing.expectEqual(InputSourceKind.mouse, event.source.kind);
+        },
+        else => return error.ExpectedActionReleased,
+    }
+}
