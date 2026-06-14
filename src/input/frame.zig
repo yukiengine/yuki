@@ -30,6 +30,20 @@ pub const Frame = struct {
         return input.EventReader.init(self.event_items);
     }
 
+    /// Returns a named API-facing view over this frame.
+    pub fn named(
+        self: Frame,
+        registry: *const input.ActionRegistry,
+        map: input.ActionMapId,
+    ) input.NamedFrame {
+        return input.NamedFrame.init(
+            registry,
+            map,
+            self.state,
+            self.event_items,
+        );
+    }
+
     /// Returns all frame-local input events.
     pub fn events(self: Frame) []const input.InputEvent {
         return self.reader().events();

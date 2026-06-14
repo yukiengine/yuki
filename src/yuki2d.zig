@@ -88,6 +88,9 @@ pub const InputMap = input.InputMap;
 /// Public read-only input frame.
 pub const InputFrame = input_frame.Frame;
 
+/// Public named input frame view.
+pub const NamedInputFrame = input.NamedFrame;
+
 /// Public frame-local input event iterator.
 pub const InputEventIterator = input_frame.EventIterator;
 
