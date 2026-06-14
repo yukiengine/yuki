@@ -10,6 +10,9 @@ pub const render = @import("render2d.zig");
 /// Public input action and pointer state API.
 pub const input = @import("input.zig");
 
+/// Public read-only input frame API.
+pub const input_frame = @import("input_frame.zig");
+
 /// Public 2D camera helpers.
 pub const camera = @import("camera2d.zig");
 
@@ -81,3 +84,12 @@ pub const InputState = input.State;
 
 /// Public input binding map.
 pub const InputMap = input.InputMap;
+
+/// Public read-only input frame.
+pub const InputFrame = input_frame.Frame;
+
+/// Public frame-local input event iterator.
+pub const InputEventIterator = input_frame.EventIterator;
+
+/// Public frame-local input event.
+pub const InputEvent = input.InputEvent;

@@ -7,6 +7,7 @@ const tilemap = yuki2d.tilemap;
 const debug_draw = yuki2d.debug_draw;
 const scene2d = yuki2d.scene;
 const camera2d = yuki2d.camera;
+const input_frame = yuki2d.input_frame;
 
 const layer_background: i32 = -20;
 const layer_tilemap: i32 = -10;
@@ -145,9 +146,9 @@ pub const Input = struct {
     mouse_left_released: bool = false,
     mouse_inside_surface: bool = false,
 
-    /// Builds the frame input snapshot from resolved input state.
-    pub fn fromState(state: *const input.State) Input {
-        const move = state.digitalAxis2(
+    /// Builds the frame input snapshot from the read-only input frame.
+    pub fn fromFrame(frame: input_frame.Frame) Input {
+        const move = frame.digitalAxis2(
             Controls.move_left,
             Controls.move_right,
             Controls.move_up,
@@ -157,19 +158,27 @@ pub const Input = struct {
         return .{
             .move_x = move.x,
             .move_y = move.y,
-            .zoom_in = state.digitalDown(Controls.zoom_in),
-            .zoom_out = state.digitalDown(Controls.zoom_out),
-            .pause_animation_pressed = state.digitalPressed(Controls.pause_animation),
-            .reset_animation_pressed = state.digitalPressed(Controls.reset_animation),
-            .toggle_debug_pressed = state.digitalPressed(Controls.toggle_debug),
-            .mouse_screen = state.mousePosition(),
-            .mouse_delta_screen = state.mouseDelta(),
-            .mouse_wheel = state.mouseWheel(),
-            .mouse_left_down = state.isMouseButtonDown(.left),
-            .mouse_left_pressed = state.wasMouseButtonPressed(.left),
-            .mouse_left_released = state.wasMouseButtonReleased(.left),
-            .mouse_inside_surface = state.isMouseInsideWindow(),
+            .zoom_in = frame.digitalDown(Controls.zoom_in),
+            .zoom_out = frame.digitalDown(Controls.zoom_out),
+            .pause_animation_pressed = frame.digitalPressed(Controls.pause_animation),
+            .reset_animation_pressed = frame.digitalPressed(Controls.reset_animation),
+            .toggle_debug_pressed = frame.digitalPressed(Controls.toggle_debug),
+            .mouse_screen = frame.mousePosition(),
+            .mouse_delta_screen = frame.mouseDelta(),
+            .mouse_wheel = frame.mouseWheel(),
+            .mouse_left_down = frame.mouseButtonDown(.left),
+            .mouse_left_pressed = frame.mouseButtonPressed(.left),
+            .mouse_left_released = frame.mouseButtonReleased(.left),
+            .mouse_inside_surface = frame.mouseInsideSurface(),
         };
+    }
+
+    /// Compatibility helper for tests and older state-based call sites.
+    pub fn fromState(state: *const input.State) Input {
+        return fromFrame(input_frame.Frame.init(
+            state,
+            &[_]input.InputEvent{},
+        ));
     }
 };
 

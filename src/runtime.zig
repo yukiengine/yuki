@@ -6,6 +6,7 @@ const assets = yuki2d.assets;
 const input = yuki2d.input;
 const render2d = yuki2d.render;
 const camera2d = yuki2d.camera;
+const input_frame = yuki2d.input_frame;
 
 pub const AppConfig = struct {
     player_texture_path: [:0]const u8 = "assets/player.bmp",
@@ -98,13 +99,15 @@ pub const App = struct {
 
     /// Advances app state by one frame.
     pub fn update(self: *App, dt_seconds: f32, surface_width: u32, surface_height: u32) void {
-        if (self.input_state.digitalPressed(demo.Controls.quit)) {
+        const input_snapshot = self.inputFrame();
+
+        if (input_snapshot.digitalPressed(demo.Controls.quit)) {
             self.requestQuit();
         }
 
         if (self.quit_requested) return;
 
-        const frame_input = demo.Input.fromState(&self.input_state);
+        const frame_input = demo.Input.fromFrame(input_snapshot);
         self.demo_state.update(
             frame_input,
             dt_seconds,
@@ -169,6 +172,14 @@ pub const App = struct {
     /// Returns frame-local input events collected by the runtime.
     pub fn inputEvents(self: *const App) []const input.InputEvent {
         return self.input_events.items();
+    }
+
+    /// Returns the read-only input frame for the current runtime frame.
+    pub fn inputFrame(self: *const App) input_frame.Frame {
+        return input_frame.Frame.init(
+            &self.input_state,
+            self.input_events.items(),
+        );
     }
 };
 
