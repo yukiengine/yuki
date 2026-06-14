@@ -112,3 +112,5 @@ Zig modules can register:
 - Do not leak SDL or wgpu-native into user scripts.
 - Cross the Luau/Zig boundary in batches where possible.
 - Use generated Luau type definitions for autocomplete and checking.
+
+See [14. Input API](14_INPUT_API.md) for the planned input action-map shape.
