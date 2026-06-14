@@ -245,28 +245,59 @@ pub const InputSessionBuilder = struct {
         self.active_count += 1;
     }
 
-    /// Builds an owned input session from registered maps and active map requests.
-    pub fn build(self: *const InputSessionBuilder) !InputSession {
-        var session = InputSession.init(
-            self.registry_data,
-            InputRouter.init(),
-        );
+    /// Returns a copy of the registry built so far.
+    pub fn buildRegistry(self: *const InputSessionBuilder) ActionRegistry {
+        return self.registry_data;
+    }
+
+    /// Returns a copy of one action map by id.
+    pub fn actionMap(self: *const InputSessionBuilder, map: ActionMapId) ?ActionMap {
+        const map_index = self.indexOfMap(map) orelse return null;
+        return self.maps[map_index].map;
+    }
+
+    /// Returns a copy of one action map by name.
+    pub fn actionMapByName(self: *const InputSessionBuilder, map_name: []const u8) !ActionMap {
+        const map = try self.requireMap(map_name);
+        return self.actionMap(map) orelse Error.UnknownActionMap;
+    }
+
+    /// Builds an input router from registered maps and active map requests.
+    pub fn buildRouter(self: *const InputSessionBuilder) !InputRouter {
+        var router = InputRouter.init();
 
         var map_index: usize = 0;
         while (map_index < self.map_count) : (map_index += 1) {
             const entry = self.maps[map_index];
-            try session.putMap(entry.id, entry.map);
+            try router.putMap(entry.id, entry.map);
         }
 
         var active_index: usize = 0;
         while (active_index < self.active_count) : (active_index += 1) {
             const active = self.active_maps[active_index];
-            try session.pushMapOptions(active.id, active.options);
+            try router.pushMapOptions(active.id, active.options);
         }
 
-        return session;
+        return router;
     }
 
+    /// Builds an owned input session from registered maps and active map requests.
+    pub fn build(self: *const InputSessionBuilder) !InputSession {
+        return InputSession.init(
+            self.registry_data,
+            try self.buildRouter(),
+        );
+    }
+
+    /// Finds the local builder map index for a map handle.
+    fn indexOfMap(self: *const InputSessionBuilder, map: ActionMapId) ?usize {
+        var index: usize = 0;
+        while (index < self.map_count) : (index += 1) {
+            if (self.maps[index].id.eql(map)) return index;
+        }
+
+        return null;
+    }
     /// Resolves a map name into a handle.
     fn requireMap(self: *const InputSessionBuilder, map_name: []const u8) !ActionMapId {
         return self.registry_data.findMap(map_name) orelse Error.UnknownActionMap;
@@ -275,12 +306,6 @@ pub const InputSessionBuilder = struct {
     /// Resolves a map name into the local builder map index.
     fn requireMapIndex(self: *const InputSessionBuilder, map_name: []const u8) !usize {
         const map = try self.requireMap(map_name);
-
-        var index: usize = 0;
-        while (index < self.map_count) : (index += 1) {
-            if (self.maps[index].id.eql(map)) return index;
-        }
-
-        return Error.UnknownActionMap;
+        return self.indexOfMap(map) orelse Error.UnknownActionMap;
     }
 };

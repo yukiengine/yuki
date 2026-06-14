@@ -271,6 +271,94 @@ test "demo router uses named control map" {
     try std.testing.expect(frame_input.select_pressed);
 }
 
+test "demo controls expose setup builder with stable ids" {
+    const builder = demo.Controls.defaultInputSessionBuilder();
+    const registry = builder.registry();
+
+    const gameplay = registry.findMap(demo.Controls.gameplay_map_name) orelse return error.ExpectedMap;
+
+    try std.testing.expect(gameplay.eql(demo.Controls.gameplay_map));
+    try std.testing.expectEqual(@as(usize, 1), builder.mapCount());
+    try std.testing.expectEqual(@as(usize, 1), builder.activeMapCount());
+
+    try expectDigital(registry, gameplay, demo.Controls.move_left_name, demo.Controls.move_left);
+    try expectDigital(registry, gameplay, demo.Controls.move_right_name, demo.Controls.move_right);
+    try expectDigital(registry, gameplay, demo.Controls.move_up_name, demo.Controls.move_up);
+    try expectDigital(registry, gameplay, demo.Controls.move_down_name, demo.Controls.move_down);
+    try expectDigital(registry, gameplay, demo.Controls.zoom_in_name, demo.Controls.zoom_in);
+    try expectDigital(registry, gameplay, demo.Controls.zoom_out_name, demo.Controls.zoom_out);
+    try expectDigital(registry, gameplay, demo.Controls.pause_animation_name, demo.Controls.pause_animation);
+    try expectDigital(registry, gameplay, demo.Controls.reset_animation_name, demo.Controls.reset_animation);
+    try expectDigital(registry, gameplay, demo.Controls.quit_name, demo.Controls.quit);
+    try expectDigital(registry, gameplay, demo.Controls.toggle_debug_name, demo.Controls.toggle_debug);
+    try expectDigital(registry, gameplay, demo.Controls.select_name, demo.Controls.select);
+}
+
+test "demo controls build action map through setup builder" {
+    const builder = demo.Controls.defaultInputSessionBuilder();
+    var map = try builder.actionMapByName(demo.Controls.gameplay_map_name);
+    var state = input.State.init();
+
+    map.applyKey(&state, .f1, true, false);
+    var frame_input = demo.Input.fromState(&state);
+
+    try std.testing.expect(frame_input.toggle_debug_pressed);
+
+    state.beginFrame();
+
+    map.applyMouseButton(
+        &state,
+        .left,
+        true,
+        input.Vector2.xy(12.0, 18.0),
+    );
+
+    frame_input = demo.Input.fromState(&state);
+
+    try std.testing.expect(frame_input.select_pressed);
+    try std.testing.expectEqual(@as(f32, 12.0), frame_input.mouse_screen.x);
+    try std.testing.expectEqual(@as(f32, 18.0), frame_input.mouse_screen.y);
+}
+
+test "demo controls build router through setup builder" {
+    const builder = demo.Controls.defaultInputSessionBuilder();
+    const router = try builder.buildRouter();
+
+    var state = input.State.init();
+    var events = input.InputEventQueue.init();
+
+    try router.applyKeyWithEvents(&state, &events, .d, true, false);
+    try router.applyKeyWithEvents(&state, &events, .w, true, false);
+
+    const frame_input = demo.Input.fromFrame(yuki2d.input_frame.Frame.init(
+        &state,
+        events.items(),
+    ));
+
+    try std.testing.expect(router.hasMap(demo.Controls.gameplay_map));
+    try std.testing.expect(router.activeContext().containsMap(demo.Controls.gameplay_map));
+    try std.testing.expectEqual(@as(f32, 1.0), frame_input.move_x);
+    try std.testing.expectEqual(@as(f32, -1.0), frame_input.move_y);
+}
+
+test "demo controls build session through setup builder" {
+    const builder = demo.Controls.defaultInputSessionBuilder();
+    var session = try builder.build();
+
+    try session.applyKey(.space, true, false);
+    try session.applyMouseButton(
+        .left,
+        true,
+        input.Vector2.xy(22.0, 44.0),
+    );
+
+    const named = try session.namedFrameByName(demo.Controls.gameplay_map_name);
+
+    try std.testing.expect(try named.digitalPressed(demo.Controls.pause_animation_name));
+    try std.testing.expect(try named.digitalDown(demo.Controls.select_name));
+    try std.testing.expect(try named.hasActionPressed(demo.Controls.select_name));
+}
+
 fn expectDigital(
     registry: *const input.ActionRegistry,
     map: input.ActionMapId,
