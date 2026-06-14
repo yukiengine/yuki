@@ -45,6 +45,7 @@ pub const Error = error{
     DuplicateActionMapName,
     DuplicateActionName,
     UnknownActionMap,
+    UnknownActionName,
 };
 
 /// Handle to a digital action with bool/down/pressed/released state.

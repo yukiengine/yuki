@@ -15,4 +15,5 @@ test {
     _ = @import("event_tests.zig");
     _ = @import("frame_tests.zig");
     _ = @import("type_tests.zig");
+    _ = @import("builder_tests.zig");
 }

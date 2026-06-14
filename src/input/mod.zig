@@ -5,6 +5,7 @@ const registry_mod = @import("registry.zig");
 const context_mod = @import("context.zig");
 const action_map_mod = @import("action_map.zig");
 const router_mod = @import("router.zig");
+const builder_mod = @import("builder.zig");
 
 pub const Vector2 = types.Vector2;
 
@@ -64,3 +65,4 @@ pub const InputMap = action_map_mod.InputMap;
 pub const StoredActionMap = router_mod.StoredActionMap;
 pub const ActionMapSet = router_mod.ActionMapSet;
 pub const InputRouter = router_mod.InputRouter;
+pub const ActionMapBuilder = builder_mod.ActionMapBuilder;
