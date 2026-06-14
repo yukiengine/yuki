@@ -135,7 +135,10 @@ pub const App = struct {
 
     /// Applies mouse motion from the platform layer.
     pub fn applyMouseMotion(self: *App, x: f32, y: f32) void {
-        self.input_state.setMousePosition(input.Vector2.xy(x, y));
+        self.input_state.setMousePositionWithEvents(
+            &self.input_events,
+            input.Vector2.xy(x, y),
+        );
     }
 
     /// Applies one mouse button event from the platform layer.
@@ -146,7 +149,8 @@ pub const App = struct {
         x: f32,
         y: f32,
     ) void {
-        self.input_state.setMouseButton(
+        self.input_state.setMouseButtonWithEvents(
+            &self.input_events,
             button,
             down,
             input.Vector2.xy(x, y),
@@ -155,7 +159,8 @@ pub const App = struct {
 
     /// Applies mouse wheel movement from the platform layer.
     pub fn applyMouseWheel(self: *App, x: f32, y: f32, mouse_x: f32, mouse_y: f32) void {
-        self.input_state.addMouseWheel(
+        self.input_state.addMouseWheelWithEvents(
+            &self.input_events,
             input.Vector2.xy(x, y),
             input.Vector2.xy(mouse_x, mouse_y),
         );

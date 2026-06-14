@@ -1530,6 +1530,81 @@ pub const State = struct {
     pub fn wasMouseButtonReleased(self: *const State, button: MouseButton) bool {
         return self.mouse.wasButtonReleased(button);
     }
+
+    /// Updates the mouse pointer position and records a mouse motion event.
+    pub fn setMousePositionWithEvents(
+        self: *State,
+        events: *InputEventQueue,
+        position: Vector2,
+    ) void {
+        const previous = self.mousePosition();
+
+        self.setMousePosition(position);
+
+        const delta = Vector2.xy(
+            position.x - previous.x,
+            position.y - previous.y,
+        );
+
+        if (!vector2Eql(delta, Vector2.xy(0.0, 0.0))) {
+            events.pushMouseMoved(position, delta);
+        }
+    }
+
+    /// Adds mouse wheel movement and records mouse motion/scroll events.
+    pub fn addMouseWheelWithEvents(
+        self: *State,
+        events: *InputEventQueue,
+        wheel: Vector2,
+        position: Vector2,
+    ) void {
+        const previous = self.mousePosition();
+
+        self.addMouseWheel(wheel, position);
+
+        const delta = Vector2.xy(
+            position.x - previous.x,
+            position.y - previous.y,
+        );
+
+        if (!vector2Eql(delta, Vector2.xy(0.0, 0.0))) {
+            events.pushMouseMoved(position, delta);
+        }
+
+        if (!vector2Eql(wheel, Vector2.xy(0.0, 0.0))) {
+            events.pushMouseScrolled(wheel, position);
+        }
+    }
+
+    /// Updates one mouse button and records press/release events.
+    pub fn setMouseButtonWithEvents(
+        self: *State,
+        events: *InputEventQueue,
+        button: MouseButton,
+        down: bool,
+        position: Vector2,
+    ) void {
+        const previous_position = self.mousePosition();
+        const was_down = self.isMouseButtonDown(button);
+
+        self.setMouseButton(button, down, position);
+
+        const delta = Vector2.xy(
+            position.x - previous_position.x,
+            position.y - previous_position.y,
+        );
+
+        if (!vector2Eql(delta, Vector2.xy(0.0, 0.0))) {
+            events.pushMouseMoved(position, delta);
+        }
+
+        const is_down = self.isMouseButtonDown(button);
+        if (!was_down and is_down) {
+            events.pushMouseButtonPressed(button, position);
+        } else if (was_down and !is_down) {
+            events.pushMouseButtonReleased(button, position);
+        }
+    }
 };
 
 /// Binds one key to one digital action.
