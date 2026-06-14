@@ -30,6 +30,32 @@ test "demo controls route movement through input router" {
     try std.testing.expectEqual(@as(f32, -1.0), frame_input.move_y);
 }
 
+test "demo controls bind mouse button to select action" {
+    const router = demo.Controls.defaultInputRouter();
+
+    var state = input.State.init();
+    var events = input.InputEventQueue.init();
+
+    try router.applyMouseButtonWithEvents(
+        &state,
+        &events,
+        .left,
+        true,
+        input.Vector2.xy(24.0, 32.0),
+    );
+
+    const frame_input = demo.Input.fromFrame(yuki2d.input_frame.Frame.init(
+        &state,
+        events.items(),
+    ));
+
+    try std.testing.expect(frame_input.select_down);
+    try std.testing.expect(frame_input.select_pressed);
+    try std.testing.expect(!frame_input.select_released);
+    try std.testing.expectEqual(@as(f32, 24.0), frame_input.mouse_screen.x);
+    try std.testing.expectEqual(@as(f32, 32.0), frame_input.mouse_screen.y);
+}
+
 test "demo controls keep opposite directions neutral" {
     const router = demo.Controls.defaultInputRouter();
     var state = input.State.init();
@@ -63,7 +89,65 @@ test "demo controls preserve compatibility input map" {
 
     map.applyKey(&state, .space, true, false);
 
-    const frame_input = demo.Input.fromState(&state);
-
+    var frame_input = demo.Input.fromState(&state);
     try std.testing.expect(frame_input.pause_animation_pressed);
+
+    state.beginFrame();
+
+    map.applyMouseButton(
+        &state,
+        .left,
+        true,
+        input.Vector2.xy(0.0, 0.0),
+    );
+
+    frame_input = demo.Input.fromState(&state);
+    try std.testing.expect(frame_input.select_pressed);
+}
+
+test "demo select action release is one-frame input" {
+    const router = demo.Controls.defaultInputRouter();
+
+    var state = input.State.init();
+    var events = input.InputEventQueue.init();
+
+    try router.applyMouseButtonWithEvents(
+        &state,
+        &events,
+        .left,
+        true,
+        input.Vector2.xy(0.0, 0.0),
+    );
+
+    state.beginFrame();
+    events.beginFrame();
+
+    try router.applyMouseButtonWithEvents(
+        &state,
+        &events,
+        .left,
+        false,
+        input.Vector2.xy(0.0, 0.0),
+    );
+
+    var frame_input = demo.Input.fromFrame(yuki2d.input_frame.Frame.init(
+        &state,
+        events.items(),
+    ));
+
+    try std.testing.expect(!frame_input.select_down);
+    try std.testing.expect(!frame_input.select_pressed);
+    try std.testing.expect(frame_input.select_released);
+
+    state.beginFrame();
+    events.beginFrame();
+
+    frame_input = demo.Input.fromFrame(yuki2d.input_frame.Frame.init(
+        &state,
+        events.items(),
+    ));
+
+    try std.testing.expect(!frame_input.select_down);
+    try std.testing.expect(!frame_input.select_pressed);
+    try std.testing.expect(!frame_input.select_released);
 }

@@ -85,6 +85,7 @@ pub const Controls = struct {
     pub const reset_animation = input.DigitalActionId.fromIndex(7);
     pub const quit = input.DigitalActionId.fromIndex(8);
     pub const toggle_debug = input.DigitalActionId.fromIndex(9);
+    pub const select = input.DigitalActionId.fromIndex(10);
 
     /// Builds the demo gameplay action map.
     pub fn defaultActionMap() input.ActionMap {
@@ -110,6 +111,8 @@ pub const Controls = struct {
         map.bindDigitalKey(.e, zoom_in) catch unreachable;
 
         map.bindDigitalKey(.f1, toggle_debug) catch unreachable;
+
+        map.bindMouseButton(.left, select) catch unreachable;
 
         return map;
     }
@@ -141,9 +144,9 @@ pub const Input = struct {
     mouse_screen: render2d.Vector2 = render2d.Vector2.xy(0.0, 0.0),
     mouse_delta_screen: render2d.Vector2 = render2d.Vector2.xy(0.0, 0.0),
     mouse_wheel: render2d.Vector2 = render2d.Vector2.xy(0.0, 0.0),
-    mouse_left_down: bool = false,
-    mouse_left_pressed: bool = false,
-    mouse_left_released: bool = false,
+    select_down: bool = false,
+    select_pressed: bool = false,
+    select_released: bool = false,
     mouse_inside_surface: bool = false,
 
     /// Builds the frame input snapshot from the read-only input frame.
@@ -166,9 +169,9 @@ pub const Input = struct {
             .mouse_screen = frame.mousePosition(),
             .mouse_delta_screen = frame.mouseDelta(),
             .mouse_wheel = frame.mouseWheel(),
-            .mouse_left_down = frame.mouseButtonDown(.left),
-            .mouse_left_pressed = frame.mouseButtonPressed(.left),
-            .mouse_left_released = frame.mouseButtonReleased(.left),
+            .select_down = frame.digitalDown(Controls.select),
+            .select_pressed = frame.digitalPressed(Controls.select),
+            .select_released = frame.digitalReleased(Controls.select),
             .mouse_inside_surface = frame.mouseInsideSurface(),
         };
     }
@@ -192,7 +195,7 @@ pub const Demo = struct {
     show_collision_debug: bool = false,
     cursor_world: render2d.Vector2 = render2d.Vector2.xy(0.0, 0.0),
     cursor_on_screen: bool = false,
-    cursor_left_down: bool = false,
+    cursor_select_down: bool = false,
     hovered_actor: ?scene2d.ActorId = null,
     selected_actor: ?scene2d.ActorId = null,
 
@@ -318,7 +321,7 @@ pub const Demo = struct {
         self.camera_rig.update(dt_seconds);
 
         self.cursor_on_screen = input_state.mouse_inside_surface;
-        self.cursor_left_down = input_state.mouse_left_down;
+        self.cursor_select_down = input_state.select_down;
         self.cursor_world = self.camera_rig.screenToWorld(
             input_state.mouse_screen,
             surface_width,
@@ -334,10 +337,10 @@ pub const Demo = struct {
             )) |hit| {
                 self.hovered_actor = hit.actor();
 
-                if (input_state.mouse_left_pressed) {
+                if (input_state.select_pressed) {
                     self.selected_actor = hit.actor();
                 }
-            } else if (input_state.mouse_left_pressed) {
+            } else if (input_state.select_pressed) {
                 self.selected_actor = null;
             }
         }
@@ -477,7 +480,7 @@ pub const Demo = struct {
         );
 
         if (self.cursor_on_screen) {
-            const cursor_size: f32 = if (self.cursor_left_down) 18.0 else 10.0;
+            const cursor_size: f32 = if (self.cursor_select_down) 18.0 else 10.0;
 
             // Cursor cross
             try debug.cross(
