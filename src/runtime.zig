@@ -28,9 +28,7 @@ pub const App = struct {
 
     texture_catalog: assets.TextureCatalog,
 
-    input_state: input.State,
-    input_events: input.InputEventQueue,
-    input_router: input.InputRouter,
+    input_session: input.InputSession,
 
     demo_state: demo.Demo,
 
@@ -50,9 +48,7 @@ pub const App = struct {
         return .{
             .config = config,
             .texture_catalog = texture_catalog,
-            .input_state = input.State.init(),
-            .input_events = input.InputEventQueue.init(),
-            .input_router = demo.Controls.defaultInputRouter(),
+            .input_session = demo.Controls.defaultInputSession(),
             .demo_state = demo.Demo.init(
                 demo_assets.player_animation,
                 demo_assets.debug_atlas,
@@ -62,9 +58,9 @@ pub const App = struct {
         };
     }
 
+    /// Clears frame-local app state before platform events for the next frame.
     pub fn beginFrame(self: *App) void {
-        self.input_state.beginFrame();
-        self.input_events.beginFrame();
+        self.input_session.beginFrame();
         self.world_draw_list.beginFrame();
         self.screen_draw_list.beginFrame();
     }
@@ -77,8 +73,9 @@ pub const App = struct {
         return self.quit_requested;
     }
 
+    /// Releases held input state when the platform loses focus or exits.
     pub fn releaseInput(self: *App) void {
-        self.input_state.releaseAll();
+        self.input_session.releaseAll();
     }
 
     /// Applies one keyboard event from the platform layer.
@@ -88,9 +85,7 @@ pub const App = struct {
         down: bool,
         repeated: bool,
     ) void {
-        self.input_router.applyKeyWithEvents(
-            &self.input_state,
-            &self.input_events,
+        self.input_session.applyKey(
             key,
             down,
             repeated,
@@ -138,33 +133,17 @@ pub const App = struct {
 
     /// Applies mouse motion from the platform layer.
     pub fn applyMouseMotion(self: *App, x: f32, y: f32) void {
-        self.input_state.setMousePositionWithEvents(
-            &self.input_events,
-            input.Vector2.xy(x, y),
-        );
+        self.input_session.applyMouseMotion(input.Vector2.xy(x, y));
     }
 
     /// Applies one mouse button event from the platform layer.
-    pub fn applyMouseButton(
-        self: *App,
-        button: input.MouseButton,
-        down: bool,
-        x: f32,
-        y: f32,
-    ) void {
-        self.input_router.applyMouseButtonWithEvents(
-            &self.input_state,
-            &self.input_events,
-            button,
-            down,
-            input.Vector2.xy(x, y),
-        ) catch unreachable;
+    pub fn applyMouseButton(self: *App, button: input.MouseButton, down: bool, x: f32, y: f32) void {
+        self.input_session.applyMouseButton(button, down, input.Vector2.xy(x, y)) catch unreachable;
     }
 
     /// Applies mouse wheel movement from the platform layer.
     pub fn applyMouseWheel(self: *App, x: f32, y: f32, mouse_x: f32, mouse_y: f32) void {
-        self.input_state.addMouseWheelWithEvents(
-            &self.input_events,
+        self.input_session.applyMouseWheel(
             input.Vector2.xy(x, y),
             input.Vector2.xy(mouse_x, mouse_y),
         );
@@ -172,15 +151,20 @@ pub const App = struct {
 
     /// Returns frame-local input events collected by the runtime.
     pub fn inputEvents(self: *const App) []const input.InputEvent {
-        return self.input_events.items();
+        return self.input_session.inputEvents();
     }
 
     /// Returns the read-only input frame for the current runtime frame.
     pub fn inputFrame(self: *const App) input_frame.Frame {
         return input_frame.Frame.init(
-            &self.input_state,
-            self.input_events.items(),
+            self.input_session.inputState(),
+            self.input_session.inputEvents(),
         );
+    }
+
+    /// Returns a named input frame for the demo gameplay map.
+    pub fn demoInputFrame(self: *const App) input.NamedFrame {
+        return self.input_session.namedFrame(demo.Controls.gameplay_map);
     }
 };
 

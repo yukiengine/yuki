@@ -146,52 +146,64 @@ pub const Controls = struct {
         return registry;
     }
 
-    /// Builds the demo gameplay action map from named control definitions.
-    pub fn defaultActionMap() input.ActionMap {
-        var registry = defaultActionRegistry();
+    /// Builds the demo gameplay action map using an existing action registry.
+    pub fn defaultActionMapFromRegistry(registry: *const input.ActionRegistry) input.ActionMap {
         var builder = input.ActionMapBuilder.fromMapName(
-            &registry,
+            registry,
             gameplay_map_name,
         ) catch unreachable;
 
-        builder.bindDigitalKey(&registry, quit_name, .escape) catch unreachable;
-        builder.bindDigitalKey(&registry, pause_animation_name, .space) catch unreachable;
-        builder.bindDigitalKey(&registry, reset_animation_name, .r) catch unreachable;
+        builder.bindDigitalKey(registry, quit_name, .escape) catch unreachable;
+        builder.bindDigitalKey(registry, pause_animation_name, .space) catch unreachable;
+        builder.bindDigitalKey(registry, reset_animation_name, .r) catch unreachable;
 
-        builder.bindDigitalKey(&registry, move_left_name, .a) catch unreachable;
-        builder.bindDigitalKey(&registry, move_left_name, .left) catch unreachable;
+        builder.bindDigitalKey(registry, move_left_name, .a) catch unreachable;
+        builder.bindDigitalKey(registry, move_left_name, .left) catch unreachable;
 
-        builder.bindDigitalKey(&registry, move_right_name, .d) catch unreachable;
-        builder.bindDigitalKey(&registry, move_right_name, .right) catch unreachable;
+        builder.bindDigitalKey(registry, move_right_name, .d) catch unreachable;
+        builder.bindDigitalKey(registry, move_right_name, .right) catch unreachable;
 
-        builder.bindDigitalKey(&registry, move_up_name, .w) catch unreachable;
-        builder.bindDigitalKey(&registry, move_up_name, .up) catch unreachable;
+        builder.bindDigitalKey(registry, move_up_name, .w) catch unreachable;
+        builder.bindDigitalKey(registry, move_up_name, .up) catch unreachable;
 
-        builder.bindDigitalKey(&registry, move_down_name, .s) catch unreachable;
-        builder.bindDigitalKey(&registry, move_down_name, .down) catch unreachable;
+        builder.bindDigitalKey(registry, move_down_name, .s) catch unreachable;
+        builder.bindDigitalKey(registry, move_down_name, .down) catch unreachable;
 
-        builder.bindDigitalKey(&registry, zoom_out_name, .q) catch unreachable;
-        builder.bindDigitalKey(&registry, zoom_in_name, .e) catch unreachable;
+        builder.bindDigitalKey(registry, zoom_out_name, .q) catch unreachable;
+        builder.bindDigitalKey(registry, zoom_in_name, .e) catch unreachable;
 
-        builder.bindDigitalKey(&registry, toggle_debug_name, .f1) catch unreachable;
-        builder.bindMouseButton(&registry, select_name, .left) catch unreachable;
+        builder.bindDigitalKey(registry, toggle_debug_name, .f1) catch unreachable;
+        builder.bindMouseButton(registry, select_name, .left) catch unreachable;
 
         return builder.build();
     }
 
-    /// Compatibility helper while old call sites migrate from InputMap.
-    pub fn defaultInputMap() input.InputMap {
-        return defaultActionMap();
+    /// Builds the demo gameplay action map from named control definitions.
+    pub fn defaultActionMap() input.ActionMap {
+        const registry = defaultActionRegistry();
+        return defaultActionMapFromRegistry(&registry);
     }
 
     /// Builds the demo input router with the gameplay map active.
     pub fn defaultInputRouter() input.InputRouter {
-        var router = input.InputRouter.init();
+        const registry = defaultActionRegistry();
 
-        router.putMap(gameplay_map, defaultActionMap()) catch unreachable;
+        var router = input.InputRouter.init();
+        router.putMap(gameplay_map, defaultActionMapFromRegistry(&registry)) catch unreachable;
         router.pushMap(gameplay_map) catch unreachable;
 
         return router;
+    }
+
+    /// Builds the demo input session with registry, router, state, and events.
+    pub fn defaultInputSession() input.InputSession {
+        const registry = defaultActionRegistry();
+
+        var router = input.InputRouter.init();
+        router.putMap(gameplay_map, defaultActionMapFromRegistry(&registry)) catch unreachable;
+        router.pushMap(gameplay_map) catch unreachable;
+
+        return input.InputSession.init(registry, router);
     }
 };
 

@@ -105,6 +105,60 @@ test "demo controls preserve compatibility input map" {
     try std.testing.expect(frame_input.select_pressed);
 }
 
+test "demo controls build input session with active gameplay map" {
+    var session = demo.Controls.defaultInputSession();
+
+    try std.testing.expect(session.inputRouter().hasMap(demo.Controls.gameplay_map));
+    try std.testing.expect(session.activeContext().containsMap(demo.Controls.gameplay_map));
+    try std.testing.expect(session.activeContext().canProcessMap(demo.Controls.gameplay_map));
+
+    const gameplay = session.actionRegistry().findMap(demo.Controls.gameplay_map_name) orelse {
+        return error.ExpectedGameplayMap;
+    };
+
+    try std.testing.expect(gameplay.eql(demo.Controls.gameplay_map));
+}
+
+test "demo input session routes named gameplay controls" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(.d, true, false);
+    try session.applyKey(.w, true, false);
+    try session.applyMouseButton(
+        .left,
+        true,
+        input.Vector2.xy(18.0, 28.0),
+    );
+
+    const frame_input = demo.Input.fromFrame(yuki2d.input_frame.Frame.init(
+        session.inputState(),
+        session.inputEvents(),
+    ));
+
+    try std.testing.expectEqual(@as(f32, 1.0), frame_input.move_x);
+    try std.testing.expectEqual(@as(f32, -1.0), frame_input.move_y);
+    try std.testing.expect(frame_input.select_pressed);
+    try std.testing.expectEqual(@as(f32, 18.0), frame_input.mouse_screen.x);
+    try std.testing.expectEqual(@as(f32, 28.0), frame_input.mouse_screen.y);
+}
+
+test "demo input session exposes named frame" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(.f1, true, false);
+    try session.applyMouseButton(
+        .left,
+        true,
+        input.Vector2.xy(40.0, 64.0),
+    );
+
+    const named = try session.namedFrameByName(demo.Controls.gameplay_map_name);
+
+    try std.testing.expect(try named.digitalPressed(demo.Controls.toggle_debug_name));
+    try std.testing.expect(try named.digitalDown(demo.Controls.select_name));
+    try std.testing.expect(try named.hasActionPressed(demo.Controls.select_name));
+}
+
 test "demo select action release is one-frame input" {
     const router = demo.Controls.defaultInputRouter();
 
