@@ -28,7 +28,7 @@ pub const App = struct {
     texture_catalog: assets.TextureCatalog,
 
     input_state: input.State,
-    input_map: input.InputMap,
+    input_router: input.InputRouter,
 
     demo_state: demo.Demo,
 
@@ -49,7 +49,7 @@ pub const App = struct {
             .config = config,
             .texture_catalog = texture_catalog,
             .input_state = input.State.init(),
-            .input_map = demo.Controls.defaultInputMap(),
+            .input_router = demo.Controls.defaultInputRouter(),
             .demo_state = demo.Demo.init(
                 demo_assets.player_animation,
                 demo_assets.debug_atlas,
@@ -77,23 +77,24 @@ pub const App = struct {
         self.input_state.releaseAll();
     }
 
+    /// Applies one keyboard event from the platform layer.
     pub fn applyKey(
         self: *App,
         key: input.Key,
         down: bool,
         repeated: bool,
     ) void {
-        self.input_map.applyKey(
+        self.input_router.applyKey(
             &self.input_state,
             key,
             down,
             repeated,
-        );
+        ) catch unreachable;
     }
 
     /// Advances app state by one frame.
     pub fn update(self: *App, dt_seconds: f32, surface_width: u32, surface_height: u32) void {
-        if (self.input_state.actionWasPressed(demo.Controls.quit)) {
+        if (self.input_state.digitalPressed(demo.Controls.quit)) {
             self.requestQuit();
         }
 

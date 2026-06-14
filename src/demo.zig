@@ -70,48 +70,68 @@ fn buildDemoMap() DemoTilemap {
 }
 
 pub const Controls = struct {
-    pub const move_left = input.ActionId.fromIndex(0);
-    pub const move_right = input.ActionId.fromIndex(1);
-    pub const move_up = input.ActionId.fromIndex(2);
-    pub const move_down = input.ActionId.fromIndex(3);
-    pub const zoom_in = input.ActionId.fromIndex(4);
-    pub const zoom_out = input.ActionId.fromIndex(5);
-    pub const pause_animation = input.ActionId.fromIndex(6);
-    pub const reset_animation = input.ActionId.fromIndex(7);
-    pub const quit = input.ActionId.fromIndex(8);
-    pub const toggle_debug = input.ActionId.fromIndex(9);
+    /// Main demo gameplay action map.
+    pub const gameplay_map = input.ActionMapId.fromIndex(0);
 
-    pub fn defaultInputMap() input.InputMap {
-        var map = input.InputMap.init();
+    /// Player movement and camera actions.
+    pub const move_left = input.DigitalActionId.fromIndex(0);
+    pub const move_right = input.DigitalActionId.fromIndex(1);
+    pub const move_up = input.DigitalActionId.fromIndex(2);
+    pub const move_down = input.DigitalActionId.fromIndex(3);
+    pub const zoom_in = input.DigitalActionId.fromIndex(4);
+    pub const zoom_out = input.DigitalActionId.fromIndex(5);
+    pub const pause_animation = input.DigitalActionId.fromIndex(6);
+    pub const reset_animation = input.DigitalActionId.fromIndex(7);
+    pub const quit = input.DigitalActionId.fromIndex(8);
+    pub const toggle_debug = input.DigitalActionId.fromIndex(9);
 
-        map.bind(.escape, quit) catch unreachable;
-        map.bind(.space, pause_animation) catch unreachable;
-        map.bind(.r, reset_animation) catch unreachable;
+    /// Builds the demo gameplay action map.
+    pub fn defaultActionMap() input.ActionMap {
+        var map = input.ActionMap.init();
 
-        map.bind(.a, move_left) catch unreachable;
-        map.bind(.left, move_left) catch unreachable;
+        map.bindDigitalKey(.escape, quit) catch unreachable;
+        map.bindDigitalKey(.space, pause_animation) catch unreachable;
+        map.bindDigitalKey(.r, reset_animation) catch unreachable;
 
-        map.bind(.d, move_right) catch unreachable;
-        map.bind(.right, move_right) catch unreachable;
+        map.bindDigitalKey(.a, move_left) catch unreachable;
+        map.bindDigitalKey(.left, move_left) catch unreachable;
 
-        map.bind(.w, move_up) catch unreachable;
-        map.bind(.up, move_up) catch unreachable;
+        map.bindDigitalKey(.d, move_right) catch unreachable;
+        map.bindDigitalKey(.right, move_right) catch unreachable;
 
-        map.bind(.s, move_down) catch unreachable;
-        map.bind(.down, move_down) catch unreachable;
+        map.bindDigitalKey(.w, move_up) catch unreachable;
+        map.bindDigitalKey(.up, move_up) catch unreachable;
 
-        map.bind(.q, zoom_out) catch unreachable;
-        map.bind(.e, zoom_in) catch unreachable;
+        map.bindDigitalKey(.s, move_down) catch unreachable;
+        map.bindDigitalKey(.down, move_down) catch unreachable;
 
-        map.bind(.f1, toggle_debug) catch unreachable;
+        map.bindDigitalKey(.q, zoom_out) catch unreachable;
+        map.bindDigitalKey(.e, zoom_in) catch unreachable;
+
+        map.bindDigitalKey(.f1, toggle_debug) catch unreachable;
 
         return map;
+    }
+
+    /// Compatibility helper while old call sites migrate from InputMap.
+    pub fn defaultInputMap() input.InputMap {
+        return defaultActionMap();
+    }
+
+    /// Builds the demo input router with the gameplay map active.
+    pub fn defaultInputRouter() input.InputRouter {
+        var router = input.InputRouter.init();
+
+        router.putMap(gameplay_map, defaultActionMap()) catch unreachable;
+        router.pushMap(gameplay_map) catch unreachable;
+
+        return router;
     }
 };
 
 pub const Input = struct {
-    move_x: i32 = 0,
-    move_y: i32 = 0,
+    move_x: f32 = 0.0,
+    move_y: f32 = 0.0,
     zoom_in: bool = false,
     zoom_out: bool = false,
     pause_animation_pressed: bool = false,
@@ -125,15 +145,23 @@ pub const Input = struct {
     mouse_left_released: bool = false,
     mouse_inside_surface: bool = false,
 
+    /// Builds the frame input snapshot from resolved input state.
     pub fn fromState(state: *const input.State) Input {
+        const move = state.digitalAxis2(
+            Controls.move_left,
+            Controls.move_right,
+            Controls.move_up,
+            Controls.move_down,
+        );
+
         return .{
-            .move_x = state.axis(Controls.move_left, Controls.move_right),
-            .move_y = state.axis(Controls.move_up, Controls.move_down),
-            .zoom_in = state.isActionDown(Controls.zoom_in),
-            .zoom_out = state.isActionDown(Controls.zoom_out),
-            .pause_animation_pressed = state.actionWasPressed(Controls.pause_animation),
-            .reset_animation_pressed = state.actionWasPressed(Controls.reset_animation),
-            .toggle_debug_pressed = state.actionWasPressed(Controls.toggle_debug),
+            .move_x = move.x,
+            .move_y = move.y,
+            .zoom_in = state.digitalDown(Controls.zoom_in),
+            .zoom_out = state.digitalDown(Controls.zoom_out),
+            .pause_animation_pressed = state.digitalPressed(Controls.pause_animation),
+            .reset_animation_pressed = state.digitalPressed(Controls.reset_animation),
+            .toggle_debug_pressed = state.digitalPressed(Controls.toggle_debug),
             .mouse_screen = state.mousePosition(),
             .mouse_delta_screen = state.mouseDelta(),
             .mouse_wheel = state.mouseWheel(),
@@ -225,8 +253,8 @@ pub const Demo = struct {
         }
 
         const movement = render2d.Vector2.xy(
-            @as(f32, @floatFromInt(input_state.move_x)) * player_speed * dt_seconds,
-            @as(f32, @floatFromInt(input_state.move_y)) * player_speed * dt_seconds,
+            input_state.move_x * player_speed * dt_seconds,
+            input_state.move_y * player_speed * dt_seconds,
         );
 
         const map = self.tile_storage.view(demo_tile_size);
