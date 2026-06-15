@@ -165,3 +165,8 @@ const named_context_mod = @import("named_context.zig");
 pub const NamedActiveMap = named_context_mod.NamedActiveMap;
 pub const NamedInputContext = named_context_mod.NamedInputContext;
 pub const NamedActiveMapIterator = named_context_mod.NamedActiveMapIterator;
+
+// named_map_view.zig
+const named_map_view_mod = @import("named_map_view.zig");
+
+pub const NamedInputMapView = named_map_view_mod.NamedInputMapView;

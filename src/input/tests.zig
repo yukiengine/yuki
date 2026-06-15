@@ -24,4 +24,5 @@ test {
     _ = @import("source_names_tests.zig");
     _ = @import("binding_descriptors_tests.zig");
     _ = @import("builder_tests.zig");
+    _ = @import("named_map_view_tests.zig");
 }

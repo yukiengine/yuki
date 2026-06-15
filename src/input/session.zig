@@ -14,6 +14,7 @@ const event_reader_mod = @import("event_reader.zig");
 const named_frame_mod = @import("named_frame.zig");
 const named_context_mod = @import("named_context.zig");
 const binding_descriptors_mod = @import("binding_descriptors.zig");
+const named_map_view_mod = @import("named_map_view.zig");
 
 /// Shared input error set.
 pub const Error = types.Error;
@@ -65,6 +66,9 @@ pub const NamedInputContext = named_context_mod.NamedInputContext;
 
 /// Read-only named binding descriptor helper.
 pub const NamedBindingReader = binding_descriptors_mod.NamedBindingReader;
+
+/// Read-only map-scoped named input API view.
+pub const NamedInputMapView = named_map_view_mod.NamedInputMapView;
 
 /// Runtime owner for input registry, routing, resolved state, and events.
 pub const InputSession = struct {
@@ -241,6 +245,26 @@ pub const InputSession = struct {
     pub fn namedBindingReaderByName(self: *const InputSession, map_name: []const u8) !NamedBindingReader {
         const map = try self.requireMap(map_name);
         return self.namedBindingReader(map);
+    }
+
+    /// Returns a read-only named API view for one installed map.
+    pub fn namedMapView(self: *const InputSession, map: ActionMapId) !NamedInputMapView {
+        const action_map = self.actionMap(map) orelse return Error.UnknownActionMap;
+
+        return NamedInputMapView.init(
+            &self.registry,
+            map,
+            action_map,
+            &self.state,
+            self.events.items(),
+            self.router.activeContext(),
+        );
+    }
+
+    /// Returns a read-only named API view by resolving a map name.
+    pub fn namedMapViewByName(self: *const InputSession, map_name: []const u8) !NamedInputMapView {
+        const map = try self.requireMap(map_name);
+        return self.namedMapView(map);
     }
 
     /// Applies one keyboard event through the active action maps.
