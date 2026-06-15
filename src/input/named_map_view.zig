@@ -18,6 +18,7 @@ const named_frame_mod = @import("named_frame.zig");
 const named_events_mod = @import("named_events.zig");
 const binding_descriptors_mod = @import("binding_descriptors.zig");
 const named_context_mod = @import("named_context.zig");
+const action_descriptors_mod = @import("action_descriptors.zig");
 
 /// Shared input error set.
 pub const Error = types.Error;
@@ -93,6 +94,12 @@ pub const NamedInputContext = named_context_mod.NamedInputContext;
 
 /// Named active map descriptor.
 pub const NamedActiveMap = named_context_mod.NamedActiveMap;
+
+/// Kind tag for a registered action.
+pub const ActionKind = types.ActionKind;
+
+/// Read-only named action descriptor reader.
+pub const NamedActionReader = action_descriptors_mod.NamedActionReader;
 
 /// Read-only API view for one named input map.
 pub const NamedInputMapView = struct {
@@ -199,6 +206,34 @@ pub const NamedInputMapView = struct {
     pub fn firstBindingForAction(self: NamedInputMapView, action_name: []const u8) !?NamedBinding {
         _ = try self.requireAction(action_name);
         return self.bindings().firstForAction(action_name);
+    }
+
+    /// Returns a named action descriptor reader scoped to this map.
+    pub fn actions(self: NamedInputMapView) NamedActionReader {
+        return NamedActionReader.init(
+            self.registry,
+            self.map,
+        );
+    }
+
+    /// Returns the number of registered actions in this map.
+    pub fn actionCount(self: NamedInputMapView) usize {
+        return self.actions().count();
+    }
+
+    /// Returns true when this map contains a named action.
+    pub fn hasAction(self: NamedInputMapView, action_name: []const u8) bool {
+        return self.actions().contains(action_name);
+    }
+
+    /// Returns the kind for a named action in this map.
+    pub fn actionKind(self: NamedInputMapView, action_name: []const u8) !ActionKind {
+        return self.actions().kindOf(action_name);
+    }
+
+    /// Returns the typed action reference for a named action in this map.
+    pub fn actionRef(self: NamedInputMapView, action_name: []const u8) !ActionRef {
+        return self.actions().actionRef(action_name);
     }
 
     /// Returns true when a named action has at least one binding.

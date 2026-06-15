@@ -196,3 +196,38 @@ test "named input map view exposes pointer state and pointer events" {
     try std.testing.expectEqual(@as(f32, 0.0), scrolled.wheel.x);
     try std.testing.expectEqual(@as(f32, -1.0), scrolled.wheel.y);
 }
+
+test "named input map view exposes action descriptors" {
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addDigital("gameplay", "player.jump");
+    _ = try builder.addAxis1("gameplay", "player.look_x");
+    _ = try builder.addAxis2("gameplay", "player.move");
+
+    try builder.activateMap("gameplay");
+
+    const session = try builder.build();
+    const view = try session.namedMapViewByName("gameplay");
+
+    try std.testing.expectEqual(@as(usize, 3), view.actionCount());
+    try std.testing.expect(view.hasAction("player.jump"));
+    try std.testing.expect(view.hasAction("player.look_x"));
+    try std.testing.expect(view.hasAction("player.move"));
+    try std.testing.expect(!view.hasAction("player.missing"));
+
+    try std.testing.expectEqual(input.ActionKind.digital, try view.actionKind("player.jump"));
+    try std.testing.expectEqual(input.ActionKind.axis1, try view.actionKind("player.look_x"));
+    try std.testing.expectEqual(input.ActionKind.axis2, try view.actionKind("player.move"));
+
+    const move_ref = try view.actionRef("player.move");
+    try std.testing.expectEqual(input.ActionKind.axis2, move_ref.kind());
+
+    const actions = view.actions();
+    try std.testing.expectEqual(@as(usize, 1), actions.digitalCount());
+    try std.testing.expectEqual(@as(usize, 1), actions.axis1Count());
+    try std.testing.expectEqual(@as(usize, 1), actions.axis2Count());
+
+    const first = actions.first() orelse return error.ExpectedAction;
+    try std.testing.expectEqual(input.ActionKind.digital, first.kind());
+}

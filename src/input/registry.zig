@@ -402,6 +402,26 @@ pub const ActionRegistry = struct {
         return self.axis2_count;
     }
 
+    /// Returns registered action maps in registry order.
+    pub fn mapItems(self: *const ActionRegistry) []const NamedActionMap {
+        return self.maps[0..self.map_count];
+    }
+
+    /// Returns registered digital actions in registry order.
+    pub fn digitalItems(self: *const ActionRegistry) []const NamedDigitalAction {
+        return self.digital_actions[0..self.digital_count];
+    }
+
+    /// Returns registered 1D axis actions in registry order.
+    pub fn axis1Items(self: *const ActionRegistry) []const NamedAxis1Action {
+        return self.axis1_actions[0..self.axis1_count];
+    }
+
+    /// Returns registered 2D axis actions in registry order.
+    pub fn axis2Items(self: *const ActionRegistry) []const NamedAxis2Action {
+        return self.axis2_actions[0..self.axis2_count];
+    }
+
     /// Validates that a map handle points to a registered map.
     fn ensureMapExists(self: *const ActionRegistry, map: ActionMapId) !void {
         if (!self.hasMap(map)) return Error.UnknownActionMap;

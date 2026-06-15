@@ -114,3 +114,9 @@ pub const InputSession = input.InputSession;
 
 /// Public input setup builder.
 pub const InputSessionBuilder = input.InputSessionBuilder;
+
+/// Public named input action descriptor reader.
+pub const NamedInputActionReader = input.NamedActionReader;
+
+/// Public named input action iterator.
+pub const NamedInputActionIterator = input.NamedActionIterator;

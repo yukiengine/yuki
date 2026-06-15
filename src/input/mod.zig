@@ -173,3 +173,10 @@ pub const NamedActiveMapIterator = named_context_mod.NamedActiveMapIterator;
 const named_map_view_mod = @import("named_map_view.zig");
 
 pub const NamedInputMapView = named_map_view_mod.NamedInputMapView;
+
+// action_descriptors.zig
+const action_descriptors_mod = @import("action_descriptors.zig");
+
+pub const NamedActionReader = action_descriptors_mod.NamedActionReader;
+pub const NamedActionIterator = action_descriptors_mod.NamedActionIterator;
+pub const NamedActionIteratorStage = action_descriptors_mod.NamedActionIteratorStage;
