@@ -3,11 +3,15 @@
 //! This module bridges author-facing action names and runtime action maps.
 //! The hot path still uses compact handles, while content/Luau-facing setup can
 //! bind inputs through names resolved by ActionRegistry.
+//!
+//! Source-name helpers are setup-only sugar. They parse stable strings such as
+//! "space" or "left" into engine enums, then reuse the enum-based binding path.
 
 const types = @import("types.zig");
 const registry_mod = @import("registry.zig");
 const action_map_mod = @import("action_map.zig");
 const router_mod = @import("router.zig");
+const source_names_mod = @import("source_names.zig");
 
 pub const Error = types.Error;
 pub const Key = types.Key;
@@ -78,6 +82,72 @@ pub const ActionMapBuilder = struct {
     ) !void {
         const action = try self.requireDigital(registry, action_name);
         try self.action_map.bindMouseButton(button, action);
+    }
+
+    /// Binds a keyboard key name to a named digital action.
+    pub fn bindDigitalKeyName(
+        self: *ActionMapBuilder,
+        registry: *const ActionRegistry,
+        action_name: []const u8,
+        key_name: []const u8,
+    ) !void {
+        const key = try source_names_mod.parseKey(key_name);
+        try self.bindDigitalKey(registry, action_name, key);
+    }
+
+    /// Binds a mouse button name to a named digital action.
+    pub fn bindMouseButtonName(
+        self: *ActionMapBuilder,
+        registry: *const ActionRegistry,
+        action_name: []const u8,
+        button_name: []const u8,
+    ) !void {
+        const button = try source_names_mod.parseMouseButton(button_name);
+        try self.bindMouseButton(registry, action_name, button);
+    }
+
+    /// Binds two keyboard key names to a named 1D axis action.
+    pub fn bindAxis1KeyNames(
+        self: *ActionMapBuilder,
+        registry: *const ActionRegistry,
+        action_name: []const u8,
+        negative_name: []const u8,
+        positive_name: []const u8,
+    ) !void {
+        const negative = try source_names_mod.parseKey(negative_name);
+        const positive = try source_names_mod.parseKey(positive_name);
+
+        try self.bindAxis1Keys(
+            registry,
+            action_name,
+            negative,
+            positive,
+        );
+    }
+
+    /// Binds four keyboard key names to a named 2D axis action.
+    pub fn bindAxis2KeyNames(
+        self: *ActionMapBuilder,
+        registry: *const ActionRegistry,
+        action_name: []const u8,
+        left_name: []const u8,
+        right_name: []const u8,
+        up_name: []const u8,
+        down_name: []const u8,
+    ) !void {
+        const left = try source_names_mod.parseKey(left_name);
+        const right = try source_names_mod.parseKey(right_name);
+        const up = try source_names_mod.parseKey(up_name);
+        const down = try source_names_mod.parseKey(down_name);
+
+        try self.bindAxis2Keys(
+            registry,
+            action_name,
+            left,
+            right,
+            up,
+            down,
+        );
     }
 
     /// Binds two keyboard keys to a named 1D axis action.

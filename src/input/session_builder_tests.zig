@@ -174,3 +174,96 @@ test "input session builder reports unknown action names" {
         builder.bindMouseButton("gameplay", "player.move", .left),
     );
 }
+
+test "input session builder binds controls from source names" {
+    var builder = InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+
+    const jump = try builder.addDigital("gameplay", "player.jump");
+    const select = try builder.addDigital("gameplay", "pointer.select");
+    const move_x = try builder.addAxis1("gameplay", "player.move_x");
+    const move = try builder.addAxis2("gameplay", "player.move");
+
+    try builder.bindDigitalKeyName("gameplay", "player.jump", "space");
+    try builder.bindMouseButtonName("gameplay", "pointer.select", "left");
+    try builder.bindAxis1KeyNames("gameplay", "player.move_x", "a", "d");
+    try builder.bindAxis2KeyNames("gameplay", "player.move", "a", "d", "w", "s");
+
+    try builder.activateMap("gameplay");
+
+    var session = try builder.build();
+
+    try session.applyKey(.space, true, false);
+    try session.applyKey(.d, true, false);
+    try session.applyKey(.w, true, false);
+    try session.applyMouseButton(
+        .left,
+        true,
+        Vector2.xy(32.0, 48.0),
+    );
+
+    const move_value = session.inputState().axis2(move);
+    const named = try session.namedFrameByName("gameplay");
+
+    try std.testing.expect(session.inputState().digitalDown(jump));
+    try std.testing.expect(session.inputState().digitalDown(select));
+    try std.testing.expectEqual(@as(f32, 1.0), session.inputState().axis1(move_x));
+    try std.testing.expectEqual(@as(f32, 1.0), move_value.x);
+    try std.testing.expectEqual(@as(f32, -1.0), move_value.y);
+
+    try std.testing.expect(try named.digitalPressed("player.jump"));
+    try std.testing.expect(try named.digitalDown("pointer.select"));
+    try std.testing.expectEqual(@as(f32, 1.0), (try named.axis2("player.move")).x);
+    try std.testing.expectEqual(@as(f32, -1.0), (try named.axis2("player.move")).y);
+}
+
+test "input session builder reports invalid source names" {
+    var builder = InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addDigital("gameplay", "player.jump");
+    _ = try builder.addAxis1("gameplay", "player.move_x");
+    _ = try builder.addAxis2("gameplay", "player.move");
+
+    try std.testing.expectError(
+        error.UnknownKeyName,
+        builder.bindDigitalKeyName("gameplay", "player.jump", "enter"),
+    );
+
+    try std.testing.expectError(
+        error.UnknownMouseButtonName,
+        builder.bindMouseButtonName("gameplay", "player.jump", "primary"),
+    );
+
+    try std.testing.expectError(
+        error.UnknownKeyName,
+        builder.bindAxis1KeyNames("gameplay", "player.move_x", "west", "d"),
+    );
+
+    try std.testing.expectError(
+        error.UnknownKeyName,
+        builder.bindAxis2KeyNames("gameplay", "player.move", "a", "d", "north", "s"),
+    );
+}
+
+test "input session builder reports unknown actions with valid source names" {
+    var builder = InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+
+    try std.testing.expectError(
+        input.Error.UnknownActionName,
+        builder.bindDigitalKeyName("gameplay", "missing", "space"),
+    );
+
+    try std.testing.expectError(
+        input.Error.UnknownActionName,
+        builder.bindMouseButtonName("gameplay", "missing", "left"),
+    );
+
+    try std.testing.expectError(
+        input.Error.UnknownActionName,
+        builder.bindAxis2KeyNames("gameplay", "missing", "a", "d", "w", "s"),
+    );
+}

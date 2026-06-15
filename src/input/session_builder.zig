@@ -2,6 +2,10 @@
 //!
 //! InputSessionBuilder owns setup-time input registration and binding. It keeps
 //! author-facing names in setup code, then builds a handle-based InputSession.
+//!
+//! Source-name helpers are the config/Luau-facing path: they accept stable
+//! strings for physical controls, parse them once during setup, and keep runtime
+//! input maps enum/handle-based.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -10,6 +14,7 @@ const context_mod = @import("context.zig");
 const action_map_mod = @import("action_map.zig");
 const session_mod = @import("session.zig");
 const router_mod = @import("router.zig");
+const source_names_mod = @import("source_names.zig");
 
 /// Runtime input router.
 pub const InputRouter = router_mod.InputRouter;
@@ -222,6 +227,72 @@ pub const InputSessionBuilder = struct {
         };
 
         try self.maps[map_index].map.bindAxis2Keys(left, right, up, down, action);
+    }
+
+    /// Binds one key name to a named digital action.
+    pub fn bindDigitalKeyName(
+        self: *InputSessionBuilder,
+        map_name: []const u8,
+        action_name: []const u8,
+        key_name: []const u8,
+    ) !void {
+        const key = try source_names_mod.parseKey(key_name);
+        try self.bindDigitalKey(map_name, action_name, key);
+    }
+
+    /// Binds one mouse button name to a named digital action.
+    pub fn bindMouseButtonName(
+        self: *InputSessionBuilder,
+        map_name: []const u8,
+        action_name: []const u8,
+        button_name: []const u8,
+    ) !void {
+        const button = try source_names_mod.parseMouseButton(button_name);
+        try self.bindMouseButton(map_name, action_name, button);
+    }
+
+    /// Binds two key names to a named 1D axis action.
+    pub fn bindAxis1KeyNames(
+        self: *InputSessionBuilder,
+        map_name: []const u8,
+        action_name: []const u8,
+        negative_name: []const u8,
+        positive_name: []const u8,
+    ) !void {
+        const negative = try source_names_mod.parseKey(negative_name);
+        const positive = try source_names_mod.parseKey(positive_name);
+
+        try self.bindAxis1Keys(
+            map_name,
+            action_name,
+            negative,
+            positive,
+        );
+    }
+
+    /// Binds four key names to a named 2D axis action.
+    pub fn bindAxis2KeyNames(
+        self: *InputSessionBuilder,
+        map_name: []const u8,
+        action_name: []const u8,
+        left_name: []const u8,
+        right_name: []const u8,
+        up_name: []const u8,
+        down_name: []const u8,
+    ) !void {
+        const left = try source_names_mod.parseKey(left_name);
+        const right = try source_names_mod.parseKey(right_name);
+        const up = try source_names_mod.parseKey(up_name);
+        const down = try source_names_mod.parseKey(down_name);
+
+        try self.bindAxis2Keys(
+            map_name,
+            action_name,
+            left,
+            right,
+            up,
+            down,
+        );
     }
 
     /// Marks a map as active with default non-blocking options.

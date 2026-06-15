@@ -182,3 +182,87 @@ test "action map builder reports wrong action kind as unknown name" {
         builder.bindDigitalKey(&registry, "player.move", .space),
     );
 }
+
+test "action map builder binds named keyboard sources from strings" {
+    var registry = ActionRegistry.init();
+    const gameplay = try registry.addMap("gameplay");
+    const jump = try registry.addDigital(gameplay, "player.jump");
+    const move_x = try registry.addAxis1(gameplay, "player.move_x");
+    const move = try registry.addAxis2(gameplay, "player.move");
+
+    var builder = ActionMapBuilder.init(gameplay);
+
+    try builder.bindDigitalKeyName(&registry, "player.jump", "space");
+    try builder.bindAxis1KeyNames(&registry, "player.move_x", "a", "d");
+    try builder.bindAxis2KeyNames(&registry, "player.move", "a", "d", "w", "s");
+
+    const map = builder.build();
+
+    var state = State.init();
+    map.applyKey(&state, .space, true, false);
+    map.applyKey(&state, .d, true, false);
+    map.applyKey(&state, .w, true, false);
+
+    const move_value = state.axis2(move);
+
+    try std.testing.expect(state.digitalDown(jump));
+    try std.testing.expect(state.digitalPressed(jump));
+    try std.testing.expectEqual(@as(f32, 1.0), state.axis1(move_x));
+    try std.testing.expectEqual(@as(f32, 1.0), move_value.x);
+    try std.testing.expectEqual(@as(f32, -1.0), move_value.y);
+}
+
+test "action map builder binds named mouse sources from strings" {
+    var registry = ActionRegistry.init();
+    const gameplay = try registry.addMap("gameplay");
+    const select = try registry.addDigital(gameplay, "pointer.select");
+
+    var builder = ActionMapBuilder.init(gameplay);
+    try builder.bindMouseButtonName(&registry, "pointer.select", "left");
+
+    const map = builder.build();
+
+    var state = State.init();
+    map.applyMouseButton(&state, .left, true, Vector2.xy(12.0, 24.0));
+
+    try std.testing.expect(state.isMouseButtonDown(.left));
+    try std.testing.expect(state.digitalDown(select));
+    try std.testing.expect(state.digitalPressed(select));
+}
+
+test "action map builder reports invalid source names" {
+    var registry = ActionRegistry.init();
+    const gameplay = try registry.addMap("gameplay");
+
+    _ = try registry.addDigital(gameplay, "player.jump");
+    _ = try registry.addAxis2(gameplay, "player.move");
+
+    var builder = ActionMapBuilder.init(gameplay);
+
+    try std.testing.expectError(
+        error.UnknownKeyName,
+        builder.bindDigitalKeyName(&registry, "player.jump", "enter"),
+    );
+
+    try std.testing.expectError(
+        error.UnknownMouseButtonName,
+        builder.bindMouseButtonName(&registry, "player.jump", "primary"),
+    );
+
+    try std.testing.expectError(
+        error.UnknownKeyName,
+        builder.bindAxis2KeyNames(&registry, "player.move", "a", "d", "north", "s"),
+    );
+}
+
+test "action map builder still reports unknown actions with valid source names" {
+    var registry = ActionRegistry.init();
+    const gameplay = try registry.addMap("gameplay");
+
+    var builder = ActionMapBuilder.init(gameplay);
+
+    try std.testing.expectError(
+        Error.UnknownActionName,
+        builder.bindDigitalKeyName(&registry, "missing", "space"),
+    );
+}
