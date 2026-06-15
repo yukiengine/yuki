@@ -9,6 +9,10 @@ const events_mod = @import("events.zig");
 const state_mod = @import("state.zig");
 const registry_mod = @import("registry.zig");
 const event_reader_mod = @import("event_reader.zig");
+const named_events_mod = @import("named_events.zig");
+
+/// Read-only named event reader for script/debug-facing event payloads.
+pub const NamedEventReader = named_events_mod.NamedEventReader;
 
 /// Shared input error set.
 pub const Error = types.Error;
@@ -90,6 +94,15 @@ pub const NamedFrame = struct {
     /// Returns a read-only event reader for this frame.
     pub fn reader(self: NamedFrame) EventReader {
         return EventReader.init(self.event_items);
+    }
+
+    /// Returns a map-scoped event reader that resolves events into names.
+    pub fn namedReader(self: NamedFrame) NamedEventReader {
+        return NamedEventReader.init(
+            self.registry,
+            self.map,
+            self.event_items,
+        );
     }
 
     /// Returns true while a named digital action is held.

@@ -18,6 +18,7 @@ test {
     _ = @import("session_tests.zig");
     _ = @import("session_builder_tests.zig");
     _ = @import("named_frame_tests.zig");
+    _ = @import("named_events_tests.zig");
     _ = @import("type_tests.zig");
     _ = @import("builder_tests.zig");
 }

@@ -10,6 +10,7 @@ const event_reader_mod = @import("event_reader.zig");
 const named_frame_mod = @import("named_frame.zig");
 const session_mod = @import("session.zig");
 const session_builder_mod = @import("session_builder.zig");
+const named_events_mod = @import("named_events.zig");
 
 pub const Vector2 = types.Vector2;
 
@@ -73,6 +74,12 @@ pub const ActionMapBuilder = builder_mod.ActionMapBuilder;
 pub const EventReader = event_reader_mod.EventReader;
 pub const EventIterator = event_reader_mod.EventIterator;
 pub const NamedFrame = named_frame_mod.NamedFrame;
+pub const NamedDigitalActionEvent = named_events_mod.NamedDigitalActionEvent;
+pub const NamedAxis1ActionEvent = named_events_mod.NamedAxis1ActionEvent;
+pub const NamedAxis2ActionEvent = named_events_mod.NamedAxis2ActionEvent;
+pub const NamedInputEvent = named_events_mod.NamedInputEvent;
+pub const NamedEventReader = named_events_mod.NamedEventReader;
+pub const NamedEventIterator = named_events_mod.NamedEventIterator;
 pub const InputSession = session_mod.InputSession;
 pub const InputSessionBuilder = session_builder_mod.InputSessionBuilder;
 pub const ActionDescriptor = registry_mod.ActionDescriptor;
