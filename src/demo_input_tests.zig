@@ -604,6 +604,49 @@ test "demo named input events expose mouse source names" {
     try std.testing.expectEqualStrings(demo.Controls.select_mouse_button_name, source_name.control);
 }
 
+test "demo controls expose named binding descriptors" {
+    const builder = demo.Controls.defaultInputSessionBuilder();
+    const registry = builder.registry();
+    const gameplay = registry.findMap(demo.Controls.gameplay_map_name) orelse {
+        return error.ExpectedMap;
+    };
+    const map = try builder.actionMapByName(demo.Controls.gameplay_map_name);
+
+    const reader = input.NamedBindingReader.init(registry, gameplay, &map);
+
+    try std.testing.expectEqual(@as(usize, 2), reader.countForAction(demo.Controls.move_name));
+    try std.testing.expectEqual(@as(usize, 1), reader.countForAction(demo.Controls.pause_animation_name));
+    try std.testing.expectEqual(@as(usize, 1), reader.countForAction(demo.Controls.select_name));
+
+    const move = reader.firstForAction(demo.Controls.move_name) orelse {
+        return error.ExpectedBinding;
+    };
+
+    switch (move) {
+        .axis2_keys => |item| {
+            try std.testing.expectEqualStrings(demo.Controls.gameplay_map_name, item.map_name);
+            try std.testing.expectEqualStrings(demo.Controls.move_name, item.action_name);
+            try std.testing.expectEqualStrings(demo.Controls.move_left_key_name, item.left_name);
+            try std.testing.expectEqualStrings(demo.Controls.move_right_key_name, item.right_name);
+            try std.testing.expectEqualStrings(demo.Controls.move_up_key_name, item.up_name);
+            try std.testing.expectEqualStrings(demo.Controls.move_down_key_name, item.down_name);
+        },
+        else => return error.ExpectedAxis2Binding,
+    }
+
+    const select = reader.firstForAction(demo.Controls.select_name) orelse {
+        return error.ExpectedBinding;
+    };
+
+    switch (select) {
+        .mouse_button => |item| {
+            try std.testing.expectEqualStrings(demo.Controls.select_name, item.action_name);
+            try std.testing.expectEqualStrings(demo.Controls.select_mouse_button_name, item.button_name);
+        },
+        else => return error.ExpectedMouseButtonBinding,
+    }
+}
+
 fn expectDigital(
     registry: *const input.ActionRegistry,
     map: input.ActionMapId,

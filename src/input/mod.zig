@@ -146,3 +146,15 @@ pub const isMouseButtonName = source_names_mod.isMouseButtonName;
 pub const sourceKindName = source_names_mod.sourceKindName;
 pub const sourceControlName = source_names_mod.sourceControlName;
 pub const sourceControlNameEql = source_names_mod.sourceControlNameEql;
+
+// binding_descriptors.zig
+const binding_descriptors_mod = @import("binding_descriptors.zig");
+
+pub const NamedBindingKind = binding_descriptors_mod.NamedBindingKind;
+pub const NamedDigitalKeyBinding = binding_descriptors_mod.NamedDigitalKeyBinding;
+pub const NamedMouseButtonBinding = binding_descriptors_mod.NamedMouseButtonBinding;
+pub const NamedAxis1KeyBinding = binding_descriptors_mod.NamedAxis1KeyBinding;
+pub const NamedAxis2KeyBinding = binding_descriptors_mod.NamedAxis2KeyBinding;
+pub const NamedBinding = binding_descriptors_mod.NamedBinding;
+pub const NamedBindingReader = binding_descriptors_mod.NamedBindingReader;
+pub const NamedBindingIterator = binding_descriptors_mod.NamedBindingIterator;
