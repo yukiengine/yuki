@@ -71,30 +71,35 @@ fn buildDemoMap() DemoTilemap {
 }
 
 pub const Controls = struct {
+    //! Demo input setup.
+    //!
+    //! Movement is intentionally represented as one named Axis2 action. The
+    //! earlier digital movement actions were useful during migration, but the
+    //! engine-facing API should expose `player.move` as a vector value instead
+    //! of four separate booleans.
+
     /// Main demo gameplay action map.
     pub const gameplay_map = input.ActionMapId.fromIndex(0);
 
-    /// Player movement and camera actions.
-    pub const move_left = input.DigitalActionId.fromIndex(0);
-    pub const move_right = input.DigitalActionId.fromIndex(1);
-    pub const move_up = input.DigitalActionId.fromIndex(2);
-    pub const move_down = input.DigitalActionId.fromIndex(3);
-    pub const zoom_in = input.DigitalActionId.fromIndex(4);
-    pub const zoom_out = input.DigitalActionId.fromIndex(5);
-    pub const pause_animation = input.DigitalActionId.fromIndex(6);
-    pub const reset_animation = input.DigitalActionId.fromIndex(7);
-    pub const quit = input.DigitalActionId.fromIndex(8);
-    pub const toggle_debug = input.DigitalActionId.fromIndex(9);
-    pub const select = input.DigitalActionId.fromIndex(10);
+    /// Player movement vector action.
+    pub const move = input.Axis2ActionId.fromIndex(0);
+
+    /// Camera, animation, app, debug, and pointer actions.
+    pub const zoom_in = input.DigitalActionId.fromIndex(0);
+    pub const zoom_out = input.DigitalActionId.fromIndex(1);
+    pub const pause_animation = input.DigitalActionId.fromIndex(2);
+    pub const reset_animation = input.DigitalActionId.fromIndex(3);
+    pub const quit = input.DigitalActionId.fromIndex(4);
+    pub const toggle_debug = input.DigitalActionId.fromIndex(5);
+    pub const select = input.DigitalActionId.fromIndex(6);
 
     /// Gameplay action map name.
     pub const gameplay_map_name = "gameplay";
 
-    /// Named gameplay actions.
-    pub const move_left_name = "player.move_left";
-    pub const move_right_name = "player.move_right";
-    pub const move_up_name = "player.move_up";
-    pub const move_down_name = "player.move_down";
+    /// Named vector movement action.
+    pub const move_name = "player.move";
+
+    /// Named digital gameplay actions.
     pub const zoom_in_name = "camera.zoom_in";
     pub const zoom_out_name = "camera.zoom_out";
     pub const pause_animation_name = "player.pause_animation";
@@ -102,12 +107,6 @@ pub const Controls = struct {
     pub const quit_name = "app.quit";
     pub const toggle_debug_name = "debug.toggle";
     pub const select_name = "pointer.select";
-
-    /// Named vector movement action.
-    pub const move_name = "player.move";
-
-    /// Player movement vector action.
-    pub const move = input.Axis2ActionId.fromIndex(0);
 
     /// Keyboard source name for quitting the demo.
     pub const quit_key_name = "escape";
@@ -150,18 +149,6 @@ pub const Controls = struct {
         const registered_move = builder.addAxis2(gameplay_map_name, move_name) catch unreachable;
         std.debug.assert(registered_move.index == move.index);
 
-        const registered_move_left = builder.addDigital(gameplay_map_name, move_left_name) catch unreachable;
-        std.debug.assert(registered_move_left.index == move_left.index);
-
-        const registered_move_right = builder.addDigital(gameplay_map_name, move_right_name) catch unreachable;
-        std.debug.assert(registered_move_right.index == move_right.index);
-
-        const registered_move_up = builder.addDigital(gameplay_map_name, move_up_name) catch unreachable;
-        std.debug.assert(registered_move_up.index == move_up.index);
-
-        const registered_move_down = builder.addDigital(gameplay_map_name, move_down_name) catch unreachable;
-        std.debug.assert(registered_move_down.index == move_down.index);
-
         const registered_zoom_in = builder.addDigital(gameplay_map_name, zoom_in_name) catch unreachable;
         std.debug.assert(registered_zoom_in.index == zoom_in.index);
 
@@ -190,18 +177,6 @@ pub const Controls = struct {
             unreachable;
         builder.bindDigitalKeyName(gameplay_map_name, reset_animation_name, reset_animation_key_name) catch
             unreachable;
-
-        builder.bindDigitalKeyName(gameplay_map_name, move_left_name, move_left_key_name) catch unreachable;
-        builder.bindDigitalKeyName(gameplay_map_name, move_left_name, move_left_alt_key_name) catch unreachable;
-
-        builder.bindDigitalKeyName(gameplay_map_name, move_right_name, move_right_key_name) catch unreachable;
-        builder.bindDigitalKeyName(gameplay_map_name, move_right_name, move_right_alt_key_name) catch unreachable;
-
-        builder.bindDigitalKeyName(gameplay_map_name, move_up_name, move_up_key_name) catch unreachable;
-        builder.bindDigitalKeyName(gameplay_map_name, move_up_name, move_up_alt_key_name) catch unreachable;
-
-        builder.bindDigitalKeyName(gameplay_map_name, move_down_name, move_down_key_name) catch unreachable;
-        builder.bindDigitalKeyName(gameplay_map_name, move_down_name, move_down_alt_key_name) catch unreachable;
 
         builder.bindDigitalKeyName(gameplay_map_name, zoom_out_name, zoom_out_key_name) catch unreachable;
         builder.bindDigitalKeyName(gameplay_map_name, zoom_in_name, zoom_in_key_name) catch unreachable;

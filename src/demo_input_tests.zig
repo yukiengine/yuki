@@ -212,10 +212,9 @@ test "demo controls expose named action registry" {
 
     try std.testing.expect(gameplay.eql(demo.Controls.gameplay_map));
     try expectAxis2(&registry, gameplay, demo.Controls.move_name, demo.Controls.move);
-    try expectDigital(&registry, gameplay, demo.Controls.move_left_name, demo.Controls.move_left);
-    try expectDigital(&registry, gameplay, demo.Controls.move_right_name, demo.Controls.move_right);
-    try expectDigital(&registry, gameplay, demo.Controls.move_up_name, demo.Controls.move_up);
-    try expectDigital(&registry, gameplay, demo.Controls.move_down_name, demo.Controls.move_down);
+    try std.testing.expectEqual(@as(usize, 7), registry.digitalCount());
+    try std.testing.expectEqual(@as(usize, 1), registry.axis2Count());
+
     try expectDigital(&registry, gameplay, demo.Controls.zoom_in_name, demo.Controls.zoom_in);
     try expectDigital(&registry, gameplay, demo.Controls.zoom_out_name, demo.Controls.zoom_out);
     try expectDigital(&registry, gameplay, demo.Controls.pause_animation_name, demo.Controls.pause_animation);
@@ -283,10 +282,8 @@ test "demo controls expose setup builder with stable ids" {
     try std.testing.expectEqual(@as(usize, 1), builder.activeMapCount());
 
     try expectAxis2(registry, gameplay, demo.Controls.move_name, demo.Controls.move);
-    try expectDigital(registry, gameplay, demo.Controls.move_left_name, demo.Controls.move_left);
-    try expectDigital(registry, gameplay, demo.Controls.move_right_name, demo.Controls.move_right);
-    try expectDigital(registry, gameplay, demo.Controls.move_up_name, demo.Controls.move_up);
-    try expectDigital(registry, gameplay, demo.Controls.move_down_name, demo.Controls.move_down);
+    try std.testing.expectEqual(@as(usize, 7), registry.digitalCount());
+    try std.testing.expectEqual(@as(usize, 1), registry.axis2Count());
     try expectDigital(registry, gameplay, demo.Controls.zoom_in_name, demo.Controls.zoom_in);
     try expectDigital(registry, gameplay, demo.Controls.zoom_out_name, demo.Controls.zoom_out);
     try expectDigital(registry, gameplay, demo.Controls.pause_animation_name, demo.Controls.pause_animation);
@@ -433,21 +430,48 @@ test "demo movement axis emits frame-local axis2 event" {
     try std.testing.expectEqual(@as(f32, 0.0), axis_event.value.y);
 }
 
-test "demo movement axis remains compatible with legacy digital movement actions" {
+test "demo movement is only registered as a vector action" {
+    var registry = demo.Controls.defaultActionRegistry();
+    const gameplay = registry.findMap(demo.Controls.gameplay_map_name) orelse return error.ExpectedMap;
+
+    try expectMissingAction(&registry, gameplay, "player.move_left");
+    try expectMissingAction(&registry, gameplay, "player.move_right");
+    try expectMissingAction(&registry, gameplay, "player.move_up");
+    try expectMissingAction(&registry, gameplay, "player.move_down");
+
+    const movement = registry.findAction(gameplay, demo.Controls.move_name) orelse {
+        return error.ExpectedAction;
+    };
+
+    try std.testing.expectEqual(input.ActionKind.axis2, movement.kind());
+}
+
+test "demo movement axis emits named vector event" {
     var session = demo.Controls.defaultInputSession();
 
-    try session.applyKey(.a, true, false);
+    try session.applyKey(try input.parseKey(demo.Controls.move_left_key_name), true, false);
 
-    const frame = yuki2d.input_frame.Frame.init(
-        session.inputState(),
-        session.inputEvents(),
-    );
+    const named = try session.namedFrameByName(demo.Controls.gameplay_map_name);
+    const reader = named.namedReader();
 
-    const move = frame.axis2(demo.Controls.move);
+    const event = reader.firstAxis2Changed(demo.Controls.move_name) orelse {
+        return error.ExpectedAxis2Event;
+    };
 
-    try std.testing.expectEqual(@as(f32, -1.0), move.x);
-    try std.testing.expect(frame.digitalDown(demo.Controls.move_left));
-    try std.testing.expect(frame.digitalPressed(demo.Controls.move_left));
+    const source_name = input.sourceControlName(event.source) orelse {
+        return error.ExpectedSourceName;
+    };
+
+    try std.testing.expect(event.map.eql(demo.Controls.gameplay_map));
+    try std.testing.expectEqual(demo.Controls.move.index, event.action.index);
+    try std.testing.expectEqualStrings(demo.Controls.gameplay_map_name, event.map_name);
+    try std.testing.expectEqualStrings(demo.Controls.move_name, event.action_name);
+    try std.testing.expectEqual(@as(f32, 0.0), event.previous.x);
+    try std.testing.expectEqual(@as(f32, 0.0), event.previous.y);
+    try std.testing.expectEqual(@as(f32, -1.0), event.value.x);
+    try std.testing.expectEqual(@as(f32, 0.0), event.value.y);
+    try std.testing.expectEqualStrings("keyboard", source_name.device);
+    try std.testing.expectEqualStrings(demo.Controls.move_left_key_name, source_name.control);
 }
 
 test "demo controls expose valid stable source names" {
@@ -610,4 +634,12 @@ fn expectMouseButtonName(name: []const u8, expected: input.MouseButton) !void {
     const parsed = try input.parseMouseButton(name);
     try std.testing.expectEqual(expected, parsed);
     try std.testing.expectEqualStrings(name, input.mouseButtonNameAssert(parsed));
+}
+
+fn expectMissingAction(
+    registry: *const input.ActionRegistry,
+    map: input.ActionMapId,
+    name: []const u8,
+) !void {
+    try std.testing.expect(registry.findAction(map, name) == null);
 }
