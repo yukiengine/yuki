@@ -163,6 +163,21 @@ pub const InputRouter = struct {
         return self.maps.contains(id);
     }
 
+    /// Returns the number of installed action maps.
+    pub fn mapCount(self: *const InputRouter) usize {
+        return self.maps.count();
+    }
+
+    /// Returns all installed action-map entries.
+    pub fn installedMaps(self: *const InputRouter) []const StoredActionMap {
+        return self.maps.items();
+    }
+
+    /// Returns a read-only installed action map by id.
+    pub fn actionMap(self: *const InputRouter, id: ActionMapId) ?*const ActionMap {
+        return self.maps.getConst(id);
+    }
+
     /// Enables an installed map with default non-blocking options.
     pub fn pushMap(self: *InputRouter, id: ActionMapId) !void {
         try self.requireMap(id);

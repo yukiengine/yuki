@@ -222,3 +222,70 @@ test "input router can dispatch to all maps without context" {
     try std.testing.expect(state.digitalDown(jump));
     try std.testing.expect(state.digitalDown(confirm));
 }
+
+test "input router exposes installed maps for read-only inspection" {
+    const gameplay = input.ActionMapId.fromIndex(0);
+    const ui = input.ActionMapId.fromIndex(1);
+    const jump = input.DigitalActionId.fromIndex(0);
+    const confirm = input.DigitalActionId.fromIndex(1);
+
+    var gameplay_map = input.ActionMap.init();
+    try gameplay_map.bindDigitalKey(.space, jump);
+
+    var ui_map = input.ActionMap.init();
+    try ui_map.bindDigitalKey(.e, confirm);
+
+    var router = input.InputRouter.init();
+    try router.putMap(gameplay, gameplay_map);
+    try router.putMap(ui, ui_map);
+
+    try std.testing.expectEqual(@as(usize, 2), router.mapCount());
+    try std.testing.expect(router.hasMap(gameplay));
+    try std.testing.expect(router.hasMap(ui));
+
+    const installed = router.installedMaps();
+    try std.testing.expectEqual(@as(usize, 2), installed.len);
+    try std.testing.expect(installed[0].id.eql(gameplay));
+    try std.testing.expect(installed[1].id.eql(ui));
+
+    const found_gameplay = router.actionMap(gameplay) orelse {
+        return error.ExpectedActionMap;
+    };
+
+    const found_ui = router.actionMap(ui) orelse {
+        return error.ExpectedActionMap;
+    };
+
+    try std.testing.expectEqual(@as(usize, 1), found_gameplay.items().len);
+    try std.testing.expectEqual(@as(usize, 1), found_ui.items().len);
+    try std.testing.expect(router.actionMap(input.ActionMapId.fromIndex(15)) == null);
+}
+
+test "input router read-only map inspection reflects replacement" {
+    const gameplay = input.ActionMapId.fromIndex(0);
+    const jump = input.DigitalActionId.fromIndex(0);
+    const pause = input.DigitalActionId.fromIndex(1);
+
+    var first = input.ActionMap.init();
+    try first.bindDigitalKey(.space, jump);
+
+    var second = input.ActionMap.init();
+    try second.bindDigitalKey(.r, pause);
+    try second.bindMouseButton(.left, pause);
+
+    var router = input.InputRouter.init();
+    try router.putMap(gameplay, first);
+
+    var installed = router.actionMap(gameplay) orelse {
+        return error.ExpectedActionMap;
+    };
+    try std.testing.expectEqual(@as(usize, 1), installed.items().len);
+
+    try router.putMap(gameplay, second);
+
+    installed = router.actionMap(gameplay) orelse {
+        return error.ExpectedActionMap;
+    };
+    try std.testing.expectEqual(@as(usize, 2), installed.items().len);
+    try std.testing.expectEqual(@as(usize, 1), router.mapCount());
+}

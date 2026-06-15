@@ -13,6 +13,7 @@ const router_mod = @import("router.zig");
 const event_reader_mod = @import("event_reader.zig");
 const named_frame_mod = @import("named_frame.zig");
 const named_context_mod = @import("named_context.zig");
+const binding_descriptors_mod = @import("binding_descriptors.zig");
 
 /// Shared input error set.
 pub const Error = types.Error;
@@ -61,6 +62,9 @@ pub const NamedFrame = named_frame_mod.NamedFrame;
 
 /// Named active input context helper.
 pub const NamedInputContext = named_context_mod.NamedInputContext;
+
+/// Read-only named binding descriptor helper.
+pub const NamedBindingReader = binding_descriptors_mod.NamedBindingReader;
 
 /// Runtime owner for input registry, routing, resolved state, and events.
 pub const InputSession = struct {
@@ -124,6 +128,16 @@ pub const InputSession = struct {
     /// Returns mutable access to the input router.
     pub fn inputRouterMut(self: *InputSession) *InputRouter {
         return &self.router;
+    }
+
+    /// Returns the number of installed action maps.
+    pub fn installedMapCount(self: *const InputSession) usize {
+        return self.router.mapCount();
+    }
+
+    /// Returns a read-only installed action map by id.
+    pub fn actionMap(self: *const InputSession, map: ActionMapId) ?*const ActionMap {
+        return self.router.actionMap(map);
     }
 
     /// Returns the resolved input state.
@@ -210,6 +224,23 @@ pub const InputSession = struct {
             &self.registry,
             self.router.activeContext(),
         );
+    }
+
+    /// Returns a read-only named binding view for one installed map.
+    pub fn namedBindingReader(self: *const InputSession, map: ActionMapId) !NamedBindingReader {
+        const action_map = self.actionMap(map) orelse return Error.UnknownActionMap;
+
+        return NamedBindingReader.init(
+            &self.registry,
+            map,
+            action_map,
+        );
+    }
+
+    /// Returns a read-only named binding view by resolving a map name.
+    pub fn namedBindingReaderByName(self: *const InputSession, map_name: []const u8) !NamedBindingReader {
+        const map = try self.requireMap(map_name);
+        return self.namedBindingReader(map);
     }
 
     /// Applies one keyboard event through the active action maps.

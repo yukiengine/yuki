@@ -192,3 +192,116 @@ test "input session reports unknown named maps" {
         session.namedFrameByName("missing"),
     );
 }
+
+test "input session exposes installed map count and read-only maps" {
+    var builder = input.InputSessionBuilder.init();
+
+    const gameplay = try builder.addMap("gameplay");
+    const jump = try builder.addDigital("gameplay", "player.jump");
+
+    try builder.bindDigitalKeyName("gameplay", "player.jump", "space");
+    try builder.activateMap("gameplay");
+
+    const session = try builder.build();
+
+    try std.testing.expectEqual(@as(usize, 1), session.installedMapCount());
+
+    const map = session.actionMap(gameplay) orelse {
+        return error.ExpectedActionMap;
+    };
+
+    try std.testing.expectEqual(@as(usize, 1), map.items().len);
+
+    var state = input.State.init();
+    map.applyKey(&state, .space, true, false);
+
+    try std.testing.expect(state.digitalDown(jump));
+    try std.testing.expect(session.actionMap(input.ActionMapId.fromIndex(15)) == null);
+}
+
+test "input session exposes named binding reader by map id" {
+    var builder = input.InputSessionBuilder.init();
+
+    const gameplay = try builder.addMap("gameplay");
+
+    _ = try builder.addDigital("gameplay", "player.jump");
+    _ = try builder.addDigital("gameplay", "pointer.select");
+    _ = try builder.addAxis2("gameplay", "player.move");
+
+    try builder.bindDigitalKeyName("gameplay", "player.jump", "space");
+    try builder.bindMouseButtonName("gameplay", "pointer.select", "left");
+    try builder.bindAxis2KeyNames("gameplay", "player.move", "a", "d", "w", "s");
+    try builder.bindAxis2KeyNames("gameplay", "player.move", "left", "right", "up", "down");
+
+    try builder.activateMap("gameplay");
+
+    const session = try builder.build();
+    const reader = try session.namedBindingReader(gameplay);
+
+    try std.testing.expectEqual(@as(usize, 4), reader.count());
+    try std.testing.expectEqual(@as(usize, 1), reader.countForAction("player.jump"));
+    try std.testing.expectEqual(@as(usize, 1), reader.countForAction("pointer.select"));
+    try std.testing.expectEqual(@as(usize, 2), reader.countForAction("player.move"));
+
+    const move = reader.firstForAction("player.move") orelse {
+        return error.ExpectedBinding;
+    };
+
+    switch (move) {
+        .axis2_keys => |item| {
+            try std.testing.expectEqualStrings("gameplay", item.map_name);
+            try std.testing.expectEqualStrings("player.move", item.action_name);
+            try std.testing.expectEqualStrings("a", item.left_name);
+            try std.testing.expectEqualStrings("d", item.right_name);
+            try std.testing.expectEqualStrings("w", item.up_name);
+            try std.testing.expectEqualStrings("s", item.down_name);
+        },
+        else => return error.ExpectedAxis2Binding,
+    }
+}
+
+test "input session exposes named binding reader by map name" {
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addDigital("gameplay", "player.jump");
+    _ = try builder.addDigital("gameplay", "pointer.select");
+
+    try builder.bindDigitalKeyName("gameplay", "player.jump", "space");
+    try builder.bindMouseButtonName("gameplay", "pointer.select", "left");
+    try builder.activateMap("gameplay");
+
+    const session = try builder.build();
+    const reader = try session.namedBindingReaderByName("gameplay");
+
+    const jump = reader.firstForAction("player.jump") orelse {
+        return error.ExpectedBinding;
+    };
+
+    const select = reader.firstForAction("pointer.select") orelse {
+        return error.ExpectedBinding;
+    };
+
+    try std.testing.expectEqual(input.NamedBindingKind.digital_key, jump.kind());
+    try std.testing.expectEqual(input.NamedBindingKind.mouse_button, select.kind());
+    try std.testing.expectEqual(@as(usize, 2), reader.count());
+}
+
+test "input session reports unknown maps for named binding readers" {
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    try builder.activateMap("gameplay");
+
+    const session = try builder.build();
+
+    try std.testing.expectError(
+        input.Error.UnknownActionMap,
+        session.namedBindingReader(input.ActionMapId.fromIndex(15)),
+    );
+
+    try std.testing.expectError(
+        input.Error.UnknownActionMap,
+        session.namedBindingReaderByName("missing"),
+    );
+}
