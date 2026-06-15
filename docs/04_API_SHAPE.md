@@ -113,4 +113,6 @@ Zig modules can register:
 - Cross the Luau/Zig boundary in batches where possible.
 - Use generated Luau type definitions for autocomplete and checking.
 
-See [14. Input API](14_INPUT_API.md) for the planned input action-map shape.
+See [14. Input API](14_INPUT_API.md) for the current input action-map shape and
+[15. Luau Runtime API](15_LUAU_RUNTIME_API.md) for the first scripting runtime
+contract.

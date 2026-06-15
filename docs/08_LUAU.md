@@ -73,3 +73,6 @@ return Component.define("SlimeAI", {
 - Do not expose raw pointers.
 - Avoid thousands of tiny Luau-to-Zig calls per frame.
 - Prefer high-level batch operations.
+
+See [15. Luau Runtime API](15_LUAU_RUNTIME_API.md) for the first runtime script
+shape and context rules.
