@@ -12,6 +12,7 @@ pub const Axis1ActionId = types.Axis1ActionId;
 pub const Axis2ActionId = types.Axis2ActionId;
 pub const DigitalActionId = types.DigitalActionId;
 pub const Error = types.Error;
+pub const ActionKind = types.ActionKind;
 
 pub const max_action_maps = types.max_action_maps;
 pub const max_axis1_actions = types.max_axis1_actions;
@@ -43,6 +44,54 @@ pub const NamedAxis2Action = struct {
     id: Axis2ActionId,
     map: ActionMapId,
     name: []const u8,
+};
+
+/// Descriptor for any named action stored in the registry.
+pub const ActionDescriptor = union(ActionKind) {
+    digital: NamedDigitalAction,
+    axis1: NamedAxis1Action,
+    axis2: NamedAxis2Action,
+
+    /// Returns the kind of action carried by this descriptor.
+    pub fn kind(self: ActionDescriptor) ActionKind {
+        return switch (self) {
+            .digital => .digital,
+            .axis1 => .axis1,
+            .axis2 => .axis2,
+        };
+    }
+
+    /// Returns the compact typed action reference for this descriptor.
+    pub fn actionRef(self: ActionDescriptor) ActionRef {
+        return switch (self) {
+            .digital => |item| .{ .digital = item.id },
+            .axis1 => |item| .{ .axis1 = item.id },
+            .axis2 => |item| .{ .axis2 = item.id },
+        };
+    }
+
+    /// Returns the map that owns this action.
+    pub fn map(self: ActionDescriptor) ActionMapId {
+        return switch (self) {
+            .digital => |item| item.map,
+            .axis1 => |item| item.map,
+            .axis2 => |item| item.map,
+        };
+    }
+
+    /// Returns the author-facing action name.
+    pub fn name(self: ActionDescriptor) []const u8 {
+        return switch (self) {
+            .digital => |item| item.name,
+            .axis1 => |item| item.name,
+            .axis2 => |item| item.name,
+        };
+    }
+
+    /// Returns true when this descriptor belongs to the provided map.
+    pub fn isInMap(self: ActionDescriptor, map_id: ActionMapId) bool {
+        return self.map().eql(map_id);
+    }
 };
 
 /// Registry that resolves authoring names into compact typed action handles.
@@ -256,6 +305,86 @@ pub const ActionRegistry = struct {
         if (self.findAxis1(map, action_name)) |id| return .{ .axis1 = id };
         if (self.findAxis2(map, action_name)) |id| return .{ .axis2 = id };
         return null;
+    }
+
+    /// Returns map metadata by handle.
+    pub fn mapInfo(self: *const ActionRegistry, map: ActionMapId) ?NamedActionMap {
+        const index: usize = @intCast(map.index);
+        if (index >= self.map_count) return null;
+
+        const item = self.maps[index];
+        if (!item.id.eql(map)) return null;
+
+        return item;
+    }
+
+    /// Returns the author-facing map name by handle.
+    pub fn mapName(self: *const ActionRegistry, map: ActionMapId) ?[]const u8 {
+        const item = self.mapInfo(map) orelse return null;
+        return item.name;
+    }
+
+    /// Returns digital action metadata by handle.
+    pub fn digitalInfo(self: *const ActionRegistry, action: DigitalActionId) ?NamedDigitalAction {
+        const index: usize = @intCast(action.index);
+        if (index >= self.digital_count) return null;
+
+        const item = self.digital_actions[index];
+        if (item.id.index != action.index) return null;
+
+        return item;
+    }
+
+    /// Returns 1D axis action metadata by handle.
+    pub fn axis1Info(self: *const ActionRegistry, action: Axis1ActionId) ?NamedAxis1Action {
+        const index: usize = @intCast(action.index);
+        if (index >= self.axis1_count) return null;
+
+        const item = self.axis1_actions[index];
+        if (item.id.index != action.index) return null;
+
+        return item;
+    }
+
+    /// Returns 2D axis action metadata by handle.
+    pub fn axis2Info(self: *const ActionRegistry, action: Axis2ActionId) ?NamedAxis2Action {
+        const index: usize = @intCast(action.index);
+        if (index >= self.axis2_count) return null;
+
+        const item = self.axis2_actions[index];
+        if (item.id.index != action.index) return null;
+
+        return item;
+    }
+
+    /// Returns metadata for any typed action reference.
+    pub fn actionInfo(self: *const ActionRegistry, action: ActionRef) ?ActionDescriptor {
+        return switch (action) {
+            .digital => |id| if (self.digitalInfo(id)) |item| .{ .digital = item } else null,
+            .axis1 => |id| if (self.axis1Info(id)) |item| .{ .axis1 = item } else null,
+            .axis2 => |id| if (self.axis2Info(id)) |item| .{ .axis2 = item } else null,
+        };
+    }
+
+    /// Returns the author-facing action name for any typed action reference.
+    pub fn actionName(self: *const ActionRegistry, action: ActionRef) ?[]const u8 {
+        const item = self.actionInfo(action) orelse return null;
+        return item.name();
+    }
+
+    /// Returns true when an action handle exists in the registry.
+    pub fn hasAction(self: *const ActionRegistry, action: ActionRef) bool {
+        return self.actionInfo(action) != null;
+    }
+
+    /// Returns true when an action exists and belongs to the provided map.
+    pub fn actionBelongsToMap(
+        self: *const ActionRegistry,
+        map: ActionMapId,
+        action: ActionRef,
+    ) bool {
+        const item = self.actionInfo(action) orelse return false;
+        return item.isInMap(map);
     }
 
     /// Returns the number of registered digital actions.

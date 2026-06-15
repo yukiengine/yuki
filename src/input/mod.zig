@@ -75,3 +75,4 @@ pub const EventIterator = event_reader_mod.EventIterator;
 pub const NamedFrame = named_frame_mod.NamedFrame;
 pub const InputSession = session_mod.InputSession;
 pub const InputSessionBuilder = session_builder_mod.InputSessionBuilder;
+pub const ActionDescriptor = registry_mod.ActionDescriptor;
