@@ -103,12 +103,21 @@ pub const Controls = struct {
     pub const toggle_debug_name = "debug.toggle";
     pub const select_name = "pointer.select";
 
+    /// Named vector movement action.
+    pub const move_name = "player.move";
+
+    /// Player movement vector action.
+    pub const move = input.Axis2ActionId.fromIndex(0);
+
     /// Builds the setup-time input definition for the demo controls.
     pub fn defaultInputSessionBuilder() input.InputSessionBuilder {
         var builder = input.InputSessionBuilder.init();
 
         const gameplay = builder.addMap(gameplay_map_name) catch unreachable;
         std.debug.assert(gameplay.eql(gameplay_map));
+
+        const registered_move = builder.addAxis2(gameplay_map_name, move_name) catch unreachable;
+        std.debug.assert(registered_move.index == move.index);
 
         const registered_move_left = builder.addDigital(gameplay_map_name, move_left_name) catch unreachable;
         std.debug.assert(registered_move_left.index == move_left.index);
@@ -167,6 +176,9 @@ pub const Controls = struct {
         builder.bindDigitalKey(gameplay_map_name, toggle_debug_name, .f1) catch unreachable;
         builder.bindMouseButton(gameplay_map_name, select_name, .left) catch unreachable;
 
+        builder.bindAxis2Keys(gameplay_map_name, move_name, .a, .d, .w, .s) catch unreachable;
+        builder.bindAxis2Keys(gameplay_map_name, move_name, .left, .right, .up, .down) catch unreachable;
+
         builder.activateMap(gameplay_map_name) catch unreachable;
 
         return builder;
@@ -220,16 +232,11 @@ pub const Input = struct {
 
     /// Builds the frame input snapshot from the read-only input frame.
     pub fn fromFrame(frame: input_frame.Frame) Input {
-        const move = frame.digitalAxis2(
-            Controls.move_left,
-            Controls.move_right,
-            Controls.move_up,
-            Controls.move_down,
-        );
+        const move_value = frame.axis2(Controls.move);
 
         return .{
-            .move_x = move.x,
-            .move_y = move.y,
+            .move_x = move_value.x,
+            .move_y = move_value.y,
             .zoom_in = frame.digitalDown(Controls.zoom_in),
             .zoom_out = frame.digitalDown(Controls.zoom_out),
             .pause_animation_pressed = frame.digitalPressed(Controls.pause_animation),

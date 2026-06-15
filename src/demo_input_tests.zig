@@ -211,6 +211,7 @@ test "demo controls expose named action registry" {
     const gameplay = registry.findMap(demo.Controls.gameplay_map_name) orelse return error.ExpectedMap;
 
     try std.testing.expect(gameplay.eql(demo.Controls.gameplay_map));
+    try expectAxis2(&registry, gameplay, demo.Controls.move_name, demo.Controls.move);
     try expectDigital(&registry, gameplay, demo.Controls.move_left_name, demo.Controls.move_left);
     try expectDigital(&registry, gameplay, demo.Controls.move_right_name, demo.Controls.move_right);
     try expectDigital(&registry, gameplay, demo.Controls.move_up_name, demo.Controls.move_up);
@@ -281,6 +282,7 @@ test "demo controls expose setup builder with stable ids" {
     try std.testing.expectEqual(@as(usize, 1), builder.mapCount());
     try std.testing.expectEqual(@as(usize, 1), builder.activeMapCount());
 
+    try expectAxis2(registry, gameplay, demo.Controls.move_name, demo.Controls.move);
     try expectDigital(registry, gameplay, demo.Controls.move_left_name, demo.Controls.move_left);
     try expectDigital(registry, gameplay, demo.Controls.move_right_name, demo.Controls.move_right);
     try expectDigital(registry, gameplay, demo.Controls.move_up_name, demo.Controls.move_up);
@@ -359,6 +361,95 @@ test "demo controls build session through setup builder" {
     try std.testing.expect(try named.hasActionPressed(demo.Controls.select_name));
 }
 
+test "demo movement is exposed as a typed axis2 action" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(.d, true, false);
+    try session.applyKey(.w, true, false);
+
+    const frame = yuki2d.input_frame.Frame.init(
+        session.inputState(),
+        session.inputEvents(),
+    );
+
+    const move = frame.axis2(demo.Controls.move);
+    const frame_input = demo.Input.fromFrame(frame);
+
+    try std.testing.expectEqual(@as(f32, 1.0), move.x);
+    try std.testing.expectEqual(@as(f32, -1.0), move.y);
+    try std.testing.expectEqual(@as(f32, 1.0), frame_input.move_x);
+    try std.testing.expectEqual(@as(f32, -1.0), frame_input.move_y);
+}
+
+test "demo movement axis supports arrow aliases" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(.right, true, false);
+    try session.applyKey(.up, true, false);
+
+    const named = try session.namedFrameByName(demo.Controls.gameplay_map_name);
+    const move = try named.axis2(demo.Controls.move_name);
+
+    try std.testing.expectEqual(@as(f32, 1.0), move.x);
+    try std.testing.expectEqual(@as(f32, -1.0), move.y);
+}
+
+test "demo movement axis keeps opposite directions neutral" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(.a, true, false);
+    try session.applyKey(.d, true, false);
+    try session.applyKey(.w, true, false);
+    try session.applyKey(.s, true, false);
+
+    const named = try session.namedFrameByName(demo.Controls.gameplay_map_name);
+    const move = try named.axis2(demo.Controls.move_name);
+    const frame_input = demo.Input.fromFrame(yuki2d.input_frame.Frame.init(
+        session.inputState(),
+        session.inputEvents(),
+    ));
+
+    try std.testing.expectEqual(@as(f32, 0.0), move.x);
+    try std.testing.expectEqual(@as(f32, 0.0), move.y);
+    try std.testing.expectEqual(@as(f32, 0.0), frame_input.move_x);
+    try std.testing.expectEqual(@as(f32, 0.0), frame_input.move_y);
+}
+
+test "demo movement axis emits frame-local axis2 event" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(.d, true, false);
+
+    const named = try session.namedFrameByName(demo.Controls.gameplay_map_name);
+    const axis_event = try named.firstAxis2Changed(demo.Controls.move_name) orelse {
+        return error.ExpectedAxis2Event;
+    };
+
+    try std.testing.expect(axis_event.map.eql(demo.Controls.gameplay_map));
+    try std.testing.expectEqual(demo.Controls.move.index, axis_event.action.index);
+    try std.testing.expectEqual(@as(f32, 0.0), axis_event.previous.x);
+    try std.testing.expectEqual(@as(f32, 0.0), axis_event.previous.y);
+    try std.testing.expectEqual(@as(f32, 1.0), axis_event.value.x);
+    try std.testing.expectEqual(@as(f32, 0.0), axis_event.value.y);
+}
+
+test "demo movement axis remains compatible with legacy digital movement actions" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(.a, true, false);
+
+    const frame = yuki2d.input_frame.Frame.init(
+        session.inputState(),
+        session.inputEvents(),
+    );
+
+    const move = frame.axis2(demo.Controls.move);
+
+    try std.testing.expectEqual(@as(f32, -1.0), move.x);
+    try std.testing.expect(frame.digitalDown(demo.Controls.move_left));
+    try std.testing.expect(frame.digitalPressed(demo.Controls.move_left));
+}
+
 fn expectDigital(
     registry: *const input.ActionRegistry,
     map: input.ActionMapId,
@@ -366,5 +457,15 @@ fn expectDigital(
     expected: input.DigitalActionId,
 ) !void {
     const found = registry.findDigital(map, name) orelse return error.ExpectedAction;
+    try std.testing.expectEqual(expected.index, found.index);
+}
+
+fn expectAxis2(
+    registry: *const input.ActionRegistry,
+    map: input.ActionMapId,
+    name: []const u8,
+    expected: input.Axis2ActionId,
+) !void {
+    const found = registry.findAxis2(map, name) orelse return error.ExpectedAction;
     try std.testing.expectEqual(expected.index, found.index);
 }
