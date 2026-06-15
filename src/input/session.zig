@@ -12,6 +12,7 @@ const action_map_mod = @import("action_map.zig");
 const router_mod = @import("router.zig");
 const event_reader_mod = @import("event_reader.zig");
 const named_frame_mod = @import("named_frame.zig");
+const named_context_mod = @import("named_context.zig");
 
 /// Shared input error set.
 pub const Error = types.Error;
@@ -57,6 +58,9 @@ pub const EventReader = event_reader_mod.EventReader;
 
 /// Named read-only frame helper.
 pub const NamedFrame = named_frame_mod.NamedFrame;
+
+/// Named active input context helper.
+pub const NamedInputContext = named_context_mod.NamedInputContext;
 
 /// Runtime owner for input registry, routing, resolved state, and events.
 pub const InputSession = struct {
@@ -198,6 +202,14 @@ pub const InputSession = struct {
     /// Returns the active input context.
     pub fn activeContext(self: *const InputSession) *const InputContext {
         return self.router.activeContext();
+    }
+
+    /// Returns a name-based view of the active input context.
+    pub fn namedActiveContext(self: *const InputSession) NamedInputContext {
+        return NamedInputContext.init(
+            &self.registry,
+            self.router.activeContext(),
+        );
     }
 
     /// Applies one keyboard event through the active action maps.

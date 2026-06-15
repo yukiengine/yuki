@@ -158,3 +158,10 @@ pub const NamedAxis2KeyBinding = binding_descriptors_mod.NamedAxis2KeyBinding;
 pub const NamedBinding = binding_descriptors_mod.NamedBinding;
 pub const NamedBindingReader = binding_descriptors_mod.NamedBindingReader;
 pub const NamedBindingIterator = binding_descriptors_mod.NamedBindingIterator;
+
+// named_context.zig
+const named_context_mod = @import("named_context.zig");
+
+pub const NamedActiveMap = named_context_mod.NamedActiveMap;
+pub const NamedInputContext = named_context_mod.NamedInputContext;
+pub const NamedActiveMapIterator = named_context_mod.NamedActiveMapIterator;
