@@ -450,6 +450,136 @@ test "demo movement axis remains compatible with legacy digital movement actions
     try std.testing.expect(frame.digitalPressed(demo.Controls.move_left));
 }
 
+test "demo controls expose valid stable source names" {
+    try expectKeyName(demo.Controls.quit_key_name, .escape);
+    try expectKeyName(demo.Controls.pause_animation_key_name, .space);
+    try expectKeyName(demo.Controls.reset_animation_key_name, .r);
+
+    try expectKeyName(demo.Controls.move_left_key_name, .a);
+    try expectKeyName(demo.Controls.move_right_key_name, .d);
+    try expectKeyName(demo.Controls.move_up_key_name, .w);
+    try expectKeyName(demo.Controls.move_down_key_name, .s);
+
+    try expectKeyName(demo.Controls.move_left_alt_key_name, .left);
+    try expectKeyName(demo.Controls.move_right_alt_key_name, .right);
+    try expectKeyName(demo.Controls.move_up_alt_key_name, .up);
+    try expectKeyName(demo.Controls.move_down_alt_key_name, .down);
+
+    try expectKeyName(demo.Controls.zoom_out_key_name, .q);
+    try expectKeyName(demo.Controls.zoom_in_key_name, .e);
+    try expectKeyName(demo.Controls.toggle_debug_key_name, .f1);
+
+    try expectMouseButtonName(demo.Controls.select_mouse_button_name, .left);
+}
+
+test "demo controls bind source-name keyboard actions" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(try input.parseKey(demo.Controls.pause_animation_key_name), true, false);
+    try session.applyKey(try input.parseKey(demo.Controls.reset_animation_key_name), true, false);
+    try session.applyKey(try input.parseKey(demo.Controls.toggle_debug_key_name), true, false);
+
+    const frame_input = demo.Input.fromFrame(yuki2d.input_frame.Frame.init(
+        session.inputState(),
+        session.inputEvents(),
+    ));
+
+    try std.testing.expect(frame_input.pause_animation_pressed);
+    try std.testing.expect(frame_input.reset_animation_pressed);
+    try std.testing.expect(frame_input.toggle_debug_pressed);
+}
+
+test "demo controls bind source-name movement aliases" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(try input.parseKey(demo.Controls.move_right_alt_key_name), true, false);
+    try session.applyKey(try input.parseKey(demo.Controls.move_up_alt_key_name), true, false);
+
+    const named = try session.namedFrameByName(demo.Controls.gameplay_map_name);
+    const move = try named.axis2(demo.Controls.move_name);
+    const frame_input = demo.Input.fromFrame(yuki2d.input_frame.Frame.init(
+        session.inputState(),
+        session.inputEvents(),
+    ));
+
+    try std.testing.expectEqual(@as(f32, 1.0), move.x);
+    try std.testing.expectEqual(@as(f32, -1.0), move.y);
+    try std.testing.expectEqual(@as(f32, 1.0), frame_input.move_x);
+    try std.testing.expectEqual(@as(f32, -1.0), frame_input.move_y);
+}
+
+test "demo controls bind source-name mouse selection" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyMouseButton(
+        try input.parseMouseButton(demo.Controls.select_mouse_button_name),
+        true,
+        input.Vector2.xy(64.0, 96.0),
+    );
+
+    const frame_input = demo.Input.fromFrame(yuki2d.input_frame.Frame.init(
+        session.inputState(),
+        session.inputEvents(),
+    ));
+
+    try std.testing.expect(frame_input.select_down);
+    try std.testing.expect(frame_input.select_pressed);
+    try std.testing.expectEqual(@as(f32, 64.0), frame_input.mouse_screen.x);
+    try std.testing.expectEqual(@as(f32, 96.0), frame_input.mouse_screen.y);
+}
+
+test "demo named input events expose stable action and source names" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(try input.parseKey(demo.Controls.toggle_debug_key_name), true, false);
+
+    const named = try session.namedFrameByName(demo.Controls.gameplay_map_name);
+    const reader = named.namedReader();
+
+    const event = reader.firstActionPressed(demo.Controls.toggle_debug_name) orelse {
+        return error.ExpectedActionPressed;
+    };
+
+    const source_name = input.sourceControlName(event.source) orelse {
+        return error.ExpectedSourceName;
+    };
+
+    try std.testing.expect(event.map.eql(demo.Controls.gameplay_map));
+    try std.testing.expectEqual(demo.Controls.toggle_debug.index, event.action.index);
+    try std.testing.expectEqualStrings(demo.Controls.gameplay_map_name, event.map_name);
+    try std.testing.expectEqualStrings(demo.Controls.toggle_debug_name, event.action_name);
+    try std.testing.expectEqualStrings("keyboard", source_name.device);
+    try std.testing.expectEqualStrings(demo.Controls.toggle_debug_key_name, source_name.control);
+}
+
+test "demo named input events expose mouse source names" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyMouseButton(
+        try input.parseMouseButton(demo.Controls.select_mouse_button_name),
+        true,
+        input.Vector2.xy(8.0, 12.0),
+    );
+
+    const named = try session.namedFrameByName(demo.Controls.gameplay_map_name);
+    const reader = named.namedReader();
+
+    const event = reader.firstActionPressed(demo.Controls.select_name) orelse {
+        return error.ExpectedActionPressed;
+    };
+
+    const source_name = input.sourceControlName(event.source) orelse {
+        return error.ExpectedSourceName;
+    };
+
+    try std.testing.expect(event.map.eql(demo.Controls.gameplay_map));
+    try std.testing.expectEqual(demo.Controls.select.index, event.action.index);
+    try std.testing.expectEqualStrings(demo.Controls.gameplay_map_name, event.map_name);
+    try std.testing.expectEqualStrings(demo.Controls.select_name, event.action_name);
+    try std.testing.expectEqualStrings("mouse", source_name.device);
+    try std.testing.expectEqualStrings(demo.Controls.select_mouse_button_name, source_name.control);
+}
+
 fn expectDigital(
     registry: *const input.ActionRegistry,
     map: input.ActionMapId,
@@ -468,4 +598,16 @@ fn expectAxis2(
 ) !void {
     const found = registry.findAxis2(map, name) orelse return error.ExpectedAction;
     try std.testing.expectEqual(expected.index, found.index);
+}
+
+fn expectKeyName(name: []const u8, expected: input.Key) !void {
+    const parsed = try input.parseKey(name);
+    try std.testing.expectEqual(expected, parsed);
+    try std.testing.expectEqualStrings(name, input.keyNameAssert(parsed));
+}
+
+fn expectMouseButtonName(name: []const u8, expected: input.MouseButton) !void {
+    const parsed = try input.parseMouseButton(name);
+    try std.testing.expectEqual(expected, parsed);
+    try std.testing.expectEqualStrings(name, input.mouseButtonNameAssert(parsed));
 }

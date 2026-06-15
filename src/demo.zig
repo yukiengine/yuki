@@ -109,6 +109,37 @@ pub const Controls = struct {
     /// Player movement vector action.
     pub const move = input.Axis2ActionId.fromIndex(0);
 
+    /// Keyboard source name for quitting the demo.
+    pub const quit_key_name = "escape";
+
+    /// Keyboard source name for pausing the player animation.
+    pub const pause_animation_key_name = "space";
+
+    /// Keyboard source name for resetting the player animation.
+    pub const reset_animation_key_name = "r";
+
+    /// Primary keyboard source names for player movement.
+    pub const move_left_key_name = "a";
+    pub const move_right_key_name = "d";
+    pub const move_up_key_name = "w";
+    pub const move_down_key_name = "s";
+
+    /// Alternate keyboard source names for player movement.
+    pub const move_left_alt_key_name = "left";
+    pub const move_right_alt_key_name = "right";
+    pub const move_up_alt_key_name = "up";
+    pub const move_down_alt_key_name = "down";
+
+    /// Keyboard source names for camera zoom controls.
+    pub const zoom_out_key_name = "q";
+    pub const zoom_in_key_name = "e";
+
+    /// Keyboard source name for toggling collision debug drawing.
+    pub const toggle_debug_key_name = "f1";
+
+    /// Mouse source name for pointer selection.
+    pub const select_mouse_button_name = "left";
+
     /// Builds the setup-time input definition for the demo controls.
     pub fn defaultInputSessionBuilder() input.InputSessionBuilder {
         var builder = input.InputSessionBuilder.init();
@@ -154,30 +185,47 @@ pub const Controls = struct {
         const registered_select = builder.addDigital(gameplay_map_name, select_name) catch unreachable;
         std.debug.assert(registered_select.index == select.index);
 
-        builder.bindDigitalKey(gameplay_map_name, quit_name, .escape) catch unreachable;
-        builder.bindDigitalKey(gameplay_map_name, pause_animation_name, .space) catch unreachable;
-        builder.bindDigitalKey(gameplay_map_name, reset_animation_name, .r) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, quit_name, quit_key_name) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, pause_animation_name, pause_animation_key_name) catch
+            unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, reset_animation_name, reset_animation_key_name) catch
+            unreachable;
 
-        builder.bindDigitalKey(gameplay_map_name, move_left_name, .a) catch unreachable;
-        builder.bindDigitalKey(gameplay_map_name, move_left_name, .left) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, move_left_name, move_left_key_name) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, move_left_name, move_left_alt_key_name) catch unreachable;
 
-        builder.bindDigitalKey(gameplay_map_name, move_right_name, .d) catch unreachable;
-        builder.bindDigitalKey(gameplay_map_name, move_right_name, .right) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, move_right_name, move_right_key_name) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, move_right_name, move_right_alt_key_name) catch unreachable;
 
-        builder.bindDigitalKey(gameplay_map_name, move_up_name, .w) catch unreachable;
-        builder.bindDigitalKey(gameplay_map_name, move_up_name, .up) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, move_up_name, move_up_key_name) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, move_up_name, move_up_alt_key_name) catch unreachable;
 
-        builder.bindDigitalKey(gameplay_map_name, move_down_name, .s) catch unreachable;
-        builder.bindDigitalKey(gameplay_map_name, move_down_name, .down) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, move_down_name, move_down_key_name) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, move_down_name, move_down_alt_key_name) catch unreachable;
 
-        builder.bindDigitalKey(gameplay_map_name, zoom_out_name, .q) catch unreachable;
-        builder.bindDigitalKey(gameplay_map_name, zoom_in_name, .e) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, zoom_out_name, zoom_out_key_name) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, zoom_in_name, zoom_in_key_name) catch unreachable;
 
-        builder.bindDigitalKey(gameplay_map_name, toggle_debug_name, .f1) catch unreachable;
-        builder.bindMouseButton(gameplay_map_name, select_name, .left) catch unreachable;
+        builder.bindDigitalKeyName(gameplay_map_name, toggle_debug_name, toggle_debug_key_name) catch unreachable;
+        builder.bindMouseButtonName(gameplay_map_name, select_name, select_mouse_button_name) catch unreachable;
 
-        builder.bindAxis2Keys(gameplay_map_name, move_name, .a, .d, .w, .s) catch unreachable;
-        builder.bindAxis2Keys(gameplay_map_name, move_name, .left, .right, .up, .down) catch unreachable;
+        builder.bindAxis2KeyNames(
+            gameplay_map_name,
+            move_name,
+            move_left_key_name,
+            move_right_key_name,
+            move_up_key_name,
+            move_down_key_name,
+        ) catch unreachable;
+
+        builder.bindAxis2KeyNames(
+            gameplay_map_name,
+            move_name,
+            move_left_alt_key_name,
+            move_right_alt_key_name,
+            move_up_alt_key_name,
+            move_down_alt_key_name,
+        ) catch unreachable;
 
         builder.activateMap(gameplay_map_name) catch unreachable;
 
