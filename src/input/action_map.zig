@@ -12,7 +12,6 @@ pub const Vector2 = types.Vector2;
 pub const Error = types.Error;
 pub const max_bindings = types.max_bindings;
 
-pub const ActionId = types.ActionId;
 pub const DigitalActionId = types.DigitalActionId;
 pub const Axis1ActionId = types.Axis1ActionId;
 pub const Axis2ActionId = types.Axis2ActionId;
@@ -46,7 +45,7 @@ pub const ActionMap = struct {
     /// Adds one typed binding.
     pub fn pushBinding(self: *ActionMap, binding: Binding) !void {
         if (self.binding_count == max_bindings) {
-            return Error.InputMapFull;
+            return Error.ActionMapFull;
         }
 
         self.bindings[self.binding_count] = binding;
@@ -95,11 +94,6 @@ pub const ActionMap = struct {
         try self.pushBinding(.{
             .axis2_keys = Axis2KeyBinding.init(left, right, up, down, action),
         });
-    }
-
-    /// Compatibility wrapper for the old digital-only input map API.
-    pub fn bind(self: *ActionMap, key: Key, action: ActionId) !void {
-        try self.bindDigitalKey(key, action);
     }
 
     /// Applies one key event and refreshes affected typed action values.
@@ -352,9 +346,6 @@ pub const ActionMap = struct {
         state.setAxis2(action, clampAxis2(value));
     }
 };
-
-/// Compatibility alias while callers migrate from InputMap to ActionMap.
-pub const InputMap = ActionMap;
 
 /// Clamps a one-dimensional input axis into the normalized range.
 fn clampAxis1(value: f32) f32 {

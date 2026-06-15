@@ -230,11 +230,6 @@ pub const Controls = struct {
         const builder = defaultInputSessionBuilder();
         return builder.build() catch unreachable;
     }
-
-    /// Compatibility helper while old call sites migrate from InputMap.
-    pub fn defaultInputMap() input.InputMap {
-        return defaultActionMap();
-    }
 };
 
 pub const Input = struct {

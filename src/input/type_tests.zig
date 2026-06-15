@@ -40,7 +40,9 @@ test "input map ids compare by index" {
 }
 
 test "input type limits stay internally consistent" {
-    try std.testing.expectEqual(input.max_digital_actions, input.max_actions);
+    try std.testing.expect(input.max_digital_actions > 0);
+    try std.testing.expect(input.max_axis1_actions > 0);
+    try std.testing.expect(input.max_axis2_actions > 0);
     try std.testing.expectEqual(input.max_action_maps, input.max_active_action_maps);
     try std.testing.expect(input.max_bindings > 0);
     try std.testing.expect(input.max_input_events > 0);

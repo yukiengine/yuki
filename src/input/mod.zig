@@ -9,13 +9,11 @@ pub const max_digital_actions = types.max_digital_actions;
 pub const max_axis1_actions = types.max_axis1_actions;
 pub const max_axis2_actions = types.max_axis2_actions;
 pub const max_bindings = types.max_bindings;
-pub const max_actions = types.max_actions;
 pub const max_input_events = types.max_input_events;
 
 pub const Error = types.Error;
 
 pub const DigitalActionId = types.DigitalActionId;
-pub const ActionId = types.ActionId;
 pub const Axis1ActionId = types.Axis1ActionId;
 pub const Axis2ActionId = types.Axis2ActionId;
 pub const ActionMapId = types.ActionMapId;
@@ -66,7 +64,6 @@ pub const Axis1KeyBinding = action_map_mod.Axis1KeyBinding;
 pub const Axis2KeyBinding = action_map_mod.Axis2KeyBinding;
 pub const Binding = action_map_mod.Binding;
 pub const ActionMap = action_map_mod.ActionMap;
-pub const InputMap = action_map_mod.InputMap;
 
 // router.zig
 const router_mod = @import("router.zig");

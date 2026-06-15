@@ -1,34 +1,35 @@
 //! Input digital key and action edge tests.
 //!
-//! These tests use the public Yuki2D facade so they exercise the same surface
-//! that future Luau bindings should mirror.
+//! These tests use typed digital action handles directly. The old generic
+//! `ActionId` compatibility name has been removed so the tests mirror the
+//! current input API shape.
 
 const std = @import("std");
 const yuki2d = @import("../yuki2d.zig");
 
 const input = yuki2d.input;
 
-const ActionId = input.ActionId;
+const DigitalActionId = input.DigitalActionId;
 const State = input.State;
 
-test "action pressed and released are one-frame edges" {
-    const jump = ActionId.fromIndex(0);
+test "digital action pressed and released are one-frame edges" {
+    const jump = DigitalActionId.fromIndex(0);
     var state = State.init();
 
-    state.setActionDown(jump, true);
-    try std.testing.expect(state.isActionDown(jump));
-    try std.testing.expect(state.actionWasPressed(jump));
-    try std.testing.expect(!state.actionWasReleased(jump));
+    state.setDigitalDown(jump, true);
+    try std.testing.expect(state.digitalDown(jump));
+    try std.testing.expect(state.digitalPressed(jump));
+    try std.testing.expect(!state.digitalReleased(jump));
 
     state.beginFrame();
-    try std.testing.expect(state.isActionDown(jump));
-    try std.testing.expect(!state.actionWasPressed(jump));
-    try std.testing.expect(!state.actionWasReleased(jump));
+    try std.testing.expect(state.digitalDown(jump));
+    try std.testing.expect(!state.digitalPressed(jump));
+    try std.testing.expect(!state.digitalReleased(jump));
 
-    state.setActionDown(jump, false);
-    try std.testing.expect(!state.isActionDown(jump));
-    try std.testing.expect(!state.actionWasPressed(jump));
-    try std.testing.expect(state.actionWasReleased(jump));
+    state.setDigitalDown(jump, false);
+    try std.testing.expect(!state.digitalDown(jump));
+    try std.testing.expect(!state.digitalPressed(jump));
+    try std.testing.expect(state.digitalReleased(jump));
 }
 
 test "key pressed and released are one-frame edges" {
@@ -46,19 +47,19 @@ test "key pressed and released are one-frame edges" {
     try std.testing.expect(state.wasKeyReleased(.space));
 }
 
-test "axis combines opposite actions" {
-    const move_left = ActionId.fromIndex(0);
-    const move_right = ActionId.fromIndex(1);
+test "digital axis combines opposite digital actions" {
+    const move_left = DigitalActionId.fromIndex(0);
+    const move_right = DigitalActionId.fromIndex(1);
     var state = State.init();
 
-    try std.testing.expectEqual(@as(i32, 0), state.axis(move_left, move_right));
+    try std.testing.expectEqual(@as(f32, 0.0), state.digitalAxis1(move_left, move_right));
 
-    state.setActionDown(move_left, true);
-    try std.testing.expectEqual(@as(i32, -1), state.axis(move_left, move_right));
+    state.setDigitalDown(move_left, true);
+    try std.testing.expectEqual(@as(f32, -1.0), state.digitalAxis1(move_left, move_right));
 
-    state.setActionDown(move_right, true);
-    try std.testing.expectEqual(@as(i32, 0), state.axis(move_left, move_right));
+    state.setDigitalDown(move_right, true);
+    try std.testing.expectEqual(@as(f32, 0.0), state.digitalAxis1(move_left, move_right));
 
-    state.setActionDown(move_left, false);
-    try std.testing.expectEqual(@as(i32, 1), state.axis(move_left, move_right));
+    state.setDigitalDown(move_left, false);
+    try std.testing.expectEqual(@as(f32, 1.0), state.digitalAxis1(move_left, move_right));
 }

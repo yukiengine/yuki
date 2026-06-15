@@ -2,6 +2,10 @@
 //!
 //! This file owns the small shared declarations that every input subsystem uses:
 //! handles, capacity constants, keyboard keys, mouse buttons, and shared errors.
+//!
+//! The input API is typed: digital, axis1, and axis2 actions use different
+//! handles so script/debug-facing layers cannot accidentally read an action as
+//! the wrong value shape.
 
 const std = @import("std");
 const render_types = @import("../render2d/types.zig");
@@ -30,13 +34,10 @@ pub const max_bindings = 64;
 /// Maximum number of frame-local input events.
 pub const max_input_events = 128;
 
-/// Backwards-compatible alias while the input API migrates from generic actions.
-pub const max_actions = max_digital_actions;
-
 /// Shared input error set.
 pub const Error = error{
-    InputMapFull,
-    InputMapSetFull,
+    ActionMapFull,
+    ActionMapSetFull,
     InputContextFull,
     ActionMapRegistryFull,
     DigitalActionRegistryFull,
@@ -58,9 +59,6 @@ pub const DigitalActionId = extern struct {
         return .{ .index = index };
     }
 };
-
-/// Temporary compatibility alias for the old API.
-pub const ActionId = DigitalActionId;
 
 /// Handle to a one-dimensional action value.
 pub const Axis1ActionId = extern struct {

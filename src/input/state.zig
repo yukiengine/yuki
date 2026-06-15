@@ -10,14 +10,12 @@ const state_values = @import("state_values.zig");
 const state_mouse = @import("state_mouse.zig");
 
 pub const Vector2 = types.Vector2;
-pub const ActionId = types.ActionId;
 pub const DigitalActionId = types.DigitalActionId;
 pub const Axis1ActionId = types.Axis1ActionId;
 pub const Axis2ActionId = types.Axis2ActionId;
 pub const Key = types.Key;
 pub const MouseButton = types.MouseButton;
 
-pub const max_actions = types.max_actions;
 pub const max_digital_actions = types.max_digital_actions;
 pub const max_axis1_actions = types.max_axis1_actions;
 pub const max_axis2_actions = types.max_axis2_actions;
@@ -152,32 +150,6 @@ pub const State = struct {
             self.digitalAxis1(left, right),
             self.digitalAxis1(up, down),
         );
-    }
-
-    /// Compatibility wrapper for the old generic action setter.
-    pub fn setActionDown(self: *State, action: ActionId, down: bool) void {
-        self.setDigitalDown(action, down);
-    }
-
-    /// Compatibility wrapper for the old generic action held query.
-    pub fn isActionDown(self: *const State, action: ActionId) bool {
-        return self.digitalDown(action);
-    }
-
-    /// Compatibility wrapper for the old generic action pressed query.
-    pub fn actionWasPressed(self: *const State, action: ActionId) bool {
-        return self.digitalPressed(action);
-    }
-
-    /// Compatibility wrapper for the old generic action released query.
-    pub fn actionWasReleased(self: *const State, action: ActionId) bool {
-        return self.digitalReleased(action);
-    }
-
-    /// Compatibility wrapper for the old integer digital axis helper.
-    pub fn axis(self: *const State, negative: ActionId, positive: ActionId) i32 {
-        return boolToI32(self.isActionDown(positive)) -
-            boolToI32(self.isActionDown(negative));
     }
 
     /// Updates one keyboard key.

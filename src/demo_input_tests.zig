@@ -83,8 +83,8 @@ test "demo controls expose one-frame action presses" {
     try std.testing.expect(!frame_input.toggle_debug_pressed);
 }
 
-test "demo controls preserve compatibility input map" {
-    var map = demo.Controls.defaultInputMap();
+test "demo controls expose the typed gameplay action map" {
+    var map = demo.Controls.defaultActionMap();
     var state = input.State.init();
 
     map.applyKey(&state, .space, true, false);

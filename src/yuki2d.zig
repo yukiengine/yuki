@@ -70,9 +70,6 @@ pub const ActorPrefab = scene.ActorPrefab;
 /// Public spawn override description.
 pub const SpawnOverride = scene.SpawnOverride;
 
-/// Public input action handle.
-pub const ActionId = input.ActionId;
-
 /// Public keyboard key enum.
 pub const Key = input.Key;
 
@@ -81,9 +78,6 @@ pub const MouseButton = input.MouseButton;
 
 /// Public input state.
 pub const InputState = input.State;
-
-/// Public input binding map.
-pub const InputMap = input.InputMap;
 
 /// Public read-only input frame.
 pub const InputFrame = input_frame.Frame;
@@ -120,3 +114,12 @@ pub const NamedInputActionReader = input.NamedActionReader;
 
 /// Public named input action iterator.
 pub const NamedInputActionIterator = input.NamedActionIterator;
+
+/// Public digital input action handle.
+pub const DigitalActionId = input.DigitalActionId;
+
+/// Public 1D axis input action handle.
+pub const Axis1ActionId = input.Axis1ActionId;
+
+/// Public 2D axis input action handle.
+pub const Axis2ActionId = input.Axis2ActionId;

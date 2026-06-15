@@ -81,7 +81,7 @@ pub const ActionMapSet = struct {
         }
 
         if (self.map_count == max_action_maps) {
-            return Error.InputMapSetFull;
+            return Error.ActionMapSetFull;
         }
 
         self.maps[self.map_count] = StoredActionMap.init(id, map);
