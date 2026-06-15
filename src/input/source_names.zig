@@ -2,7 +2,7 @@
 //!
 //! This module is the string boundary for keyboard and mouse controls. Runtime
 //! code should keep using enums, while config files, debug tools, and future
-//! Luau bindings can use stable strings such as "space", "a", or "mouse.left".
+//! Luau bindings can use stable strings such as "space", "a", or "left".
 
 const std = @import("std");
 const types = @import("types.zig");

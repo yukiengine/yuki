@@ -1,47 +1,48 @@
 # 14. Input API
 
-This document describes the intended input API shape for Yuki2D.
+This document describes the current input API shape for Yuki2D and the direction
+for future Luau bindings.
 
-Input should expose player intent, not backend device details. SDL3 can provide
-raw events, but Luau code should work with actions, axes, mouse state, and
-standard gamepad concepts.
+Input should expose player intent, not SDL or backend device details. SDL3 can
+provide platform events, but game code should work with named actions, axes,
+mouse state, and eventually standard gamepad concepts.
 
 ## Current Status
 
-Yuki currently has:
+Yuki now has a Zig-side v0 input API that is good enough to build against for
+the current milestone.
 
-- keyboard keys;
-- mouse buttons, position, delta, and wheel;
-- action handles;
-- a simple key-to-action `InputMap`;
-- pressed, released, and held state;
-- a basic action axis helper.
+Implemented:
 
-This is useful as a foundation, but it is still too close to the internal
-runtime shape. The public API should move toward named, typed actions grouped
-into action maps.
+- keyboard key and mouse button enums;
+- stable source names such as `"space"`, `"a"`, and `"left"`;
+- mouse position, delta, wheel, and button state;
+- typed action handles:
+  `DigitalActionId`, `Axis1ActionId`, and `Axis2ActionId`;
+- named action maps through `ActionRegistry`;
+- `ActionMap` bindings for digital, axis1, and axis2 actions;
+- multiple bindings feeding the same action;
+- active action maps with priority and whole-map blocking;
+- `InputSession` as the owned runtime input object;
+- `InputSessionBuilder` for setup-time named registration;
+- frame-local input events;
+- named event, binding, context, and action descriptor readers;
+- `NamedInputMapView` as the main map-scoped read API;
+- demo runtime input built from the named map view.
 
-## Goals
+This is not the final input system. It is the current stable foundation. The
+major missing pieces are Luau bindings, gamepad support, data-file loading,
+user rebinding, text input, and multiple local players.
 
-- Let games define named actions such as `player.jump` or `ui.confirm`.
-- Support action maps such as `gameplay`, `ui`, and `debug`.
-- Allow multiple active maps with predictable priority.
-- Support digital actions, 1D axes, and 2D axes.
-- Support keyboard, mouse, and standard gamepad inputs.
-- Keep SDL and controller backend details out of Luau.
-- Resolve string/content names to handles before hot-path runtime use.
-- Expose both polling and frame-local input events to Luau.
+## Current Shape
 
-## Non-Goals For Now
+The runtime has two layers:
 
-- Text input and IME.
-- User-facing rebinding UI.
-- Multiple local players.
-- Input recording/replay.
-- Raw controller APIs in Luau.
-- Full action callback subscription lifetime management.
+1. **Handle-based internals** for hot-path state and routing.
+2. **Name-based views** for script/debug/tool-facing APIs.
 
-These can be added later without changing the core model.
+The handle-based layer keeps input compact and predictable. The name-based layer
+keeps authoring readable and is the model future Luau APIs should mirror.
 
 ## Core Concepts
 
@@ -53,11 +54,32 @@ Physical input is data from a device:
 - mouse button;
 - mouse motion;
 - mouse wheel;
-- gamepad button;
-- gamepad axis or stick.
+- future gamepad button;
+- future gamepad axis or stick.
 
 Physical input belongs near the platform layer. Game scripts should rarely need
 to read it directly.
+
+### Source Names
+
+Source names are stable strings for physical controls.
+
+Examples:
+
+```text
+space
+a
+d
+left
+right
+```
+
+The current source-name helpers parse keyboard names and mouse button names
+during setup. Mouse button names are button-local strings such as `"left"` and
+`"right"`; source descriptors can still report `{ device = "mouse", control =
+"left" }` for tooling/debug output.
+
+Runtime bindings store enums, not strings.
 
 ### Action
 
@@ -68,27 +90,26 @@ Examples:
 ```text
 player.move
 player.jump
-player.dash
 ui.confirm
 ui.cancel
 debug.toggle_overlay
 ```
 
-Actions are named in content/API code, then resolved to compact handles for
-runtime use.
+Actions are named in setup/content code, then resolved to compact typed handles
+for runtime use.
 
 ### Action Value
 
-Actions should be typed. The first value kinds should be:
+Actions are typed:
 
 ```text
 digital   bool state with pressed/released edges
-axis1     f32 value, usually -1.0 to 1.0
-axis2     Vector2 value, usually normalized or clamped
+axis1     f32 value
+axis2     Vector2 value
 ```
 
-Avoid making every action return every possible type. Typed actions make Luau
-type definitions and Zig validation much cleaner.
+Typed actions keep Zig validation clear and should make Luau type definitions
+cleaner later.
 
 ### Binding
 
@@ -97,16 +118,14 @@ A binding maps one or more physical inputs into one action value.
 Examples:
 
 ```text
-Space                    -> player.jump
-GamepadSouth             -> player.jump
-A/D                      -> player.move.x
-W/S                      -> player.move.y
-GamepadLeftStick         -> player.move
-Escape                   -> ui.cancel
-MouseLeft                -> ui.activate
+space        -> player.jump
+a/d          -> player.move.x
+w/s          -> player.move.y
+left mouse   -> pointer.select
 ```
 
-Multiple bindings can feed the same action.
+Multiple bindings can feed the same action. The demo uses both WASD and arrow
+keys for the same `player.move` axis2 action.
 
 ### Action Map
 
@@ -121,12 +140,11 @@ debug
 photo_mode
 ```
 
-Games should be able to enable, disable, push, or pop maps without rebuilding
-the input system.
+Maps can be pushed, popped, prioritized, and marked blocking.
 
 ### Active Map Stack
 
-The runtime should process active maps by priority.
+The runtime processes active maps by priority.
 
 Example:
 
@@ -136,45 +154,154 @@ pause_menu
 gameplay
 ```
 
-This allows debug shortcuts, modal UI, and gameplay controls to coexist.
-
-The first version can support simple whole-map blocking:
+Whole-map blocking is implemented now:
 
 - non-blocking maps allow lower-priority maps to receive input too;
-- blocking maps stop lower-priority maps from receiving matching input.
+- blocking maps stop lower-priority maps behind them.
 
-More detailed per-action consumption can come later if needed.
+Per-action consumption is not implemented yet.
+
+## Main Zig APIs
+
+### InputSessionBuilder
+
+`InputSessionBuilder` is the setup-time API for named maps, actions, bindings,
+and initial active maps.
+
+Example:
+
+```zig
+var builder = input.InputSessionBuilder.init();
+
+_ = try builder.addMap("gameplay");
+_ = try builder.addAxis2("gameplay", "player.move");
+_ = try builder.addDigital("gameplay", "player.jump");
+
+try builder.bindAxis2KeyNames(
+    "gameplay",
+    "player.move",
+    "a",
+    "d",
+    "w",
+    "s",
+);
+
+try builder.bindDigitalKeyName("gameplay", "player.jump", "space");
+try builder.activateMap("gameplay");
+
+var session = try builder.build();
+```
+
+### InputSession
+
+`InputSession` owns:
+
+- the action registry;
+- the input router;
+- resolved input state;
+- frame-local input events.
+
+The platform layer applies physical input through it:
+
+```zig
+try session.applyKey(.space, true, false);
+try session.applyMouseButton(.left, true, input.Vector2.xy(32.0, 48.0));
+session.applyMouseMotion(input.Vector2.xy(32.0, 48.0));
+session.applyMouseWheel(input.Vector2.xy(0.0, -1.0), input.Vector2.xy(32.0, 48.0));
+```
+
+### NamedInputMapView
+
+`NamedInputMapView` is the preferred API-facing read view for one map.
+
+It exposes:
+
+- current action values;
+- mouse state;
+- frame-local named events;
+- active map state;
+- registered action descriptors;
+- named binding descriptors.
+
+Example:
+
+```zig
+const gameplay = try session.namedMapViewByName("gameplay");
+
+const move = try gameplay.axis2("player.move");
+if (try gameplay.digitalPressed("player.jump")) {
+    // jump
+}
+
+if (gameplay.canProcess()) {
+    // map is active and not blocked by a higher-priority modal map
+}
+```
+
+### Introspection Readers
+
+The input module has read-only readers for tooling and future Luau bindings:
+
+```zig
+const actions = gameplay.actions();
+const bindings = gameplay.bindings();
+const events = gameplay.namedEvents();
+const context = gameplay.namedContext();
+```
+
+These readers do not mutate runtime input state. They exist so debug UI, docs,
+and generated bindings can inspect input without learning internal storage.
+
+## Input Events
+
+SDL/platform callbacks should not call Luau directly.
+
+Current flow:
+
+```text
+SDL event arrives
+  -> platform layer calls InputSession
+  -> InputSession updates key/mouse state
+  -> active action maps resolve semantic actions
+  -> frame-local input events are recorded
+  -> game code reads state or events during update
+```
+
+Current event kinds:
+
+```text
+action_pressed
+action_released
+axis1_changed
+axis2_changed
+mouse_moved
+mouse_button_pressed
+mouse_button_released
+mouse_scrolled
+```
+
+Events are frame-local. Persistent game state should be stored by the caller.
 
 ## Keyboard Model
 
-Keyboard input should distinguish physical keys from layout-resolved symbols.
+The current implementation uses a small engine-level `Key` enum and stable key
+names. This is enough for the demo and for early gameplay input.
 
-Physical keys are useful for movement:
+Still planned:
 
-```text
-the key in the W position
-the key in the A position
-the key in the S position
-the key in the D position
-```
+- better physical-key naming;
+- layout-aware display names;
+- logical/text input;
+- IME support.
 
-Logical symbols are useful for shortcuts and text-like commands:
-
-```text
-the character W
-the character /
-the character =
-```
-
-This matters for layouts such as QWERTY and AZERTY. A movement binding usually
-wants physical keys. A text shortcut may want logical symbols.
-
-The first API should prefer physical keys for gameplay bindings and leave text
-input as a separate future system.
+Movement bindings should continue to prefer physical keys. Text input should be
+a separate future system.
 
 ## Gamepad Model
 
-Gamepad input should use a standard gamepad abstraction:
+Gamepad support is not implemented yet.
+
+The planned model is a standard gamepad abstraction:
 
 ```text
 south button
@@ -196,21 +323,20 @@ guide
 Luau should not need to know whether a controller is Xbox, PlayStation, Switch,
 or another supported controller.
 
-Backend-specific controller details should stay in the platform layer. Advanced
-raw controller access can be considered later.
+## Luau Direction
 
-## Luau API Draft
+Luau bindings should mirror the named map view shape, not SDL or wgpu-native
+details.
 
 Polling should be the primary gameplay API:
 
 ```lua
-local Input = require("@yuki/input")
-local Actions = require("game/actions")
+local input = yuki.input.map("gameplay")
 
 function update(dt)
-    local move = Input.axis2(Actions.PlayerMove)
+    local move = input:axis2("player.move")
 
-    if Input.pressed(Actions.PlayerJump) then
+    if input:pressed("player.jump") then
         player:jump()
     end
 
@@ -218,11 +344,13 @@ function update(dt)
 end
 ```
 
-Frame-local events should be the primary UI and one-shot API:
+Frame-local events should be available for UI and one-shot logic:
 
 ```lua
-for event in Input.events() do
-    if event.kind == "action_pressed" and event.action == Actions.UiConfirm then
+local input = yuki.input.map("gameplay")
+
+for event in input:events() do
+    if event.kind == "action_pressed" and event.action == "ui.confirm" then
         menu:confirm()
     end
 end
@@ -231,161 +359,59 @@ end
 Map control should be explicit:
 
 ```lua
-Input.pushMap(InputMaps.Gameplay)
-Input.pushMap(InputMaps.PauseMenu, {
+yuki.input.pushMap("gameplay")
+yuki.input.pushMap("pause_menu", {
     priority = 100,
     blocking = true,
 })
 
-Input.popMap(InputMaps.PauseMenu)
+yuki.input.popMap("pause_menu")
 ```
 
-Action definitions can start as data:
+The exact Luau names can change. The important shape is:
 
-```lua
-return {
-    maps = {
-        gameplay = {
-            actions = {
-                move = { type = "axis2" },
-                jump = { type = "digital" },
-            },
+- named maps;
+- typed named actions;
+- setup-time binding validation;
+- map-scoped polling;
+- frame-local events;
+- no backend dependency leakage.
 
-            bindings = {
-                { action = "move", source = { keyboard_axis2 = {
-                    up = "KeyW",
-                    down = "KeyS",
-                    left = "KeyA",
-                    right = "KeyD",
-                } } },
+## Completed Migration Work
 
-                { action = "move", source = { gamepad_stick = "left" } },
-                { action = "jump", source = { key = "Space" } },
-                { action = "jump", source = { gamepad_button = "south" } },
-            },
-        },
-    },
-}
-```
+The old simple input path has been moved into a fuller named action-map model.
 
-The exact data syntax can change. The important shape is typed actions,
-bindings, and named maps.
+Completed:
 
-## Input Events
+1. Typed action handles.
+2. Named action registry.
+3. `ActionMap` bindings grouped by map.
+4. Active map stack with priority and blocking.
+5. Key/mouse routing into typed action state.
+6. Frame-local input event queue.
+7. Demo controls on named actions.
+8. `InputSession` and `InputSessionBuilder`.
+9. Stable source names for setup.
+10. Named events, bindings, context, and action descriptors.
+11. `NamedInputMapView`.
+12. Demo runtime consuming `NamedInputMapView`.
 
-Do not call Luau directly from SDL input callbacks.
+## Still Planned
 
-Preferred flow:
-
-```text
-SDL event arrives
-  -> Zig records raw device state
-  -> Zig resolves active action maps once per frame
-  -> Zig creates frame-local input events
-  -> Luau reads or iterates events during update
-```
-
-Initial event kinds:
-
-```text
-action_pressed
-action_released
-axis1_changed
-axis2_changed
-mouse_moved
-mouse_button_pressed
-mouse_button_released
-mouse_scrolled
-```
-
-Events are frame-local. If a script wants persistent state, it should store that
-state itself or use polling.
-
-Example event value:
-
-```lua
-{
-    kind = "action_pressed",
-    action = Actions.UiConfirm,
-    map = InputMaps.Ui,
-    device = "keyboard",
-    frame = 1234,
-}
-```
-
-Callbacks such as `Input.onPressed(...)` can be added later as sugar over the
-same event queue. They should not be the first implementation.
-
-## Zig API Draft
-
-Zig should keep the hot path handle-based:
-
-```zig
-const move = input.Axis2Id.fromIndex(0);
-const jump = input.ActionId.fromIndex(1);
-
-const move_value = input_state.axis2(move);
-if (input_state.pressed(jump)) {
-    // jump
-}
-```
-
-The public façade can expose named registration and lookup:
-
-```zig
-const gameplay = try registry.addMap("gameplay");
-const move = try registry.addAxis2(gameplay, "player.move");
-const jump = try registry.addDigital(gameplay, "player.jump");
-
-try registry.bindKeyAxis2(gameplay, move, .{
-    .up = .key_w,
-    .down = .key_s,
-    .left = .key_a,
-    .right = .key_d,
-});
-
-try registry.bindGamepadButton(gameplay, jump, .south);
-```
-
-This keeps authoring readable while runtime state stays compact.
-
-## Suggested Runtime Layers
-
-```text
-SDL/platform input
-  raw device state
-  action registry and bindings
-  active map stack
-  resolved action state
-  frame-local input event queue
-  Yuki2D / Luau API
-```
-
-Only the top layer should shape Luau. The lower layers can stay Zig-focused.
-
-## Migration Plan
-
-1. Rename the current simple `InputMap` concept internally if needed so
-   `ActionMap` can mean a named game-facing map.
-2. Add typed action handles:
-   `DigitalActionId`, `Axis1ActionId`, and `Axis2ActionId`.
-3. Add an action registry that maps names to typed action handles.
-4. Add `ActionMap` data with bindings grouped by map.
-5. Add an active map stack with priority and whole-map blocking.
-6. Resolve raw key/mouse state into typed action state once per frame.
-7. Add a frame-local input event queue.
-8. Update the demo to use named actions through the new API.
-9. Shape the future Luau bindings around the same names and event model.
-
-Each step should keep `zig build run` working.
+- Luau binding implementation.
+- Data-driven action map loading.
+- Gamepad source types and bindings.
+- Better physical/logical keyboard distinction.
+- User-facing rebinding.
+- Text input and IME.
+- Multiple local players.
+- Input recording/replay.
+- Optional callback sugar over the event queue.
 
 ## Open Questions
 
-- Should action names be plain strings, generated constants, or both?
-- Should map blocking be whole-map only at first?
-- Should mouse actions live in the same action map model or in a separate
-  pointer API with optional action bindings?
-- How much keyboard layout display data should be exposed before there is a
-  rebinding UI?
+- Should Luau scripts use raw action strings, generated constants, or both?
+- Should map blocking stay whole-map only for the first Luau version?
+- How much keyboard layout display data is needed before rebinding UI exists?
 - When local multiplayer arrives, should player ownership belong to the map,
   the binding, or a separate input user object?
