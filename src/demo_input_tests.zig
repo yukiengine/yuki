@@ -604,6 +604,76 @@ test "demo named input events expose mouse source names" {
     try std.testing.expectEqualStrings(demo.Controls.select_mouse_button_name, source_name.control);
 }
 
+test "demo input snapshot can be built from named map view" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(try input.parseKey(demo.Controls.move_right_key_name), true, false);
+    try session.applyKey(try input.parseKey(demo.Controls.move_up_key_name), true, false);
+    try session.applyKey(try input.parseKey(demo.Controls.zoom_in_key_name), true, false);
+    try session.applyKey(try input.parseKey(demo.Controls.toggle_debug_key_name), true, false);
+    try session.applyMouseButton(
+        try input.parseMouseButton(demo.Controls.select_mouse_button_name),
+        true,
+        input.Vector2.xy(64.0, 96.0),
+    );
+
+    const view = try session.namedMapViewByName(demo.Controls.gameplay_map_name);
+    const frame_input = try demo.Input.fromNamedMapView(view);
+
+    try std.testing.expectEqual(@as(f32, 1.0), frame_input.move_x);
+    try std.testing.expectEqual(@as(f32, -1.0), frame_input.move_y);
+    try std.testing.expect(frame_input.zoom_in);
+    try std.testing.expect(!frame_input.zoom_out);
+    try std.testing.expect(frame_input.toggle_debug_pressed);
+    try std.testing.expect(frame_input.select_down);
+    try std.testing.expect(frame_input.select_pressed);
+    try std.testing.expect(!frame_input.select_released);
+    try std.testing.expectEqual(@as(f32, 64.0), frame_input.mouse_screen.x);
+    try std.testing.expectEqual(@as(f32, 96.0), frame_input.mouse_screen.y);
+    try std.testing.expect(frame_input.mouse_inside_surface);
+}
+
+test "demo named map view exposes gameplay bindings and events together" {
+    var session = demo.Controls.defaultInputSession();
+
+    try session.applyKey(try input.parseKey(demo.Controls.move_left_alt_key_name), true, false);
+    try session.applyKey(try input.parseKey(demo.Controls.pause_animation_key_name), true, false);
+
+    const view = try session.namedMapViewByName(demo.Controls.gameplay_map_name);
+
+    try std.testing.expectEqualStrings(demo.Controls.gameplay_map_name, try view.mapName());
+    try std.testing.expect(view.isActive());
+    try std.testing.expect(view.canProcess());
+
+    try std.testing.expectEqual(@as(usize, 2), try view.bindingCountForAction(demo.Controls.move_name));
+    try std.testing.expectEqual(@as(usize, 1), try view.bindingCountForAction(demo.Controls.pause_animation_name));
+
+    const move = try view.axis2(demo.Controls.move_name);
+    try std.testing.expectEqual(@as(f32, -1.0), move.x);
+    try std.testing.expectEqual(@as(f32, 0.0), move.y);
+
+    const move_event = try view.firstAxis2Changed(demo.Controls.move_name) orelse {
+        return error.ExpectedMoveChanged;
+    };
+    try std.testing.expectEqualStrings(demo.Controls.gameplay_map_name, move_event.map_name);
+    try std.testing.expectEqualStrings(demo.Controls.move_name, move_event.action_name);
+
+    const pause_event = try view.firstActionPressed(demo.Controls.pause_animation_name) orelse {
+        return error.ExpectedPausePressed;
+    };
+    try std.testing.expectEqualStrings(demo.Controls.pause_animation_name, pause_event.action_name);
+}
+
+test "public yuki2d facade exposes named input map view" {
+    var session = demo.Controls.defaultInputSession();
+
+    const view: yuki2d.NamedInputMapView = try session.namedMapViewByName(
+        demo.Controls.gameplay_map_name,
+    );
+
+    try std.testing.expectEqualStrings(demo.Controls.gameplay_map_name, try view.mapName());
+}
+
 test "demo controls expose named binding descriptors" {
     const builder = demo.Controls.defaultInputSessionBuilder();
     const registry = builder.registry();

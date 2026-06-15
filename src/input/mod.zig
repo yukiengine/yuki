@@ -100,6 +100,9 @@ pub const NamedAxis2ActionEvent = named_events_mod.NamedAxis2ActionEvent;
 pub const NamedInputEvent = named_events_mod.NamedInputEvent;
 pub const NamedEventReader = named_events_mod.NamedEventReader;
 pub const NamedEventIterator = named_events_mod.NamedEventIterator;
+pub const NamedMouseMotionEvent = named_events_mod.NamedMouseMotionEvent;
+pub const NamedMouseButtonEvent = named_events_mod.NamedMouseButtonEvent;
+pub const NamedMouseWheelEvent = named_events_mod.NamedMouseWheelEvent;
 
 // session.zig
 const session_mod = @import("session.zig");

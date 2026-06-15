@@ -275,6 +275,28 @@ pub const Input = struct {
         };
     }
 
+    /// Builds the frame input snapshot from the named map-scoped input API.
+    pub fn fromNamedMapView(view: input.NamedInputMapView) !Input {
+        const move_value = try view.axis2(Controls.move_name);
+
+        return .{
+            .move_x = move_value.x,
+            .move_y = move_value.y,
+            .zoom_in = try view.digitalDown(Controls.zoom_in_name),
+            .zoom_out = try view.digitalDown(Controls.zoom_out_name),
+            .pause_animation_pressed = try view.digitalPressed(Controls.pause_animation_name),
+            .reset_animation_pressed = try view.digitalPressed(Controls.reset_animation_name),
+            .toggle_debug_pressed = try view.digitalPressed(Controls.toggle_debug_name),
+            .mouse_screen = view.mousePosition(),
+            .mouse_delta_screen = view.mouseDelta(),
+            .mouse_wheel = view.mouseWheel(),
+            .select_down = try view.digitalDown(Controls.select_name),
+            .select_pressed = try view.digitalPressed(Controls.select_name),
+            .select_released = try view.digitalReleased(Controls.select_name),
+            .mouse_inside_surface = view.mouseInsideSurface(),
+        };
+    }
+
     /// Compatibility helper for tests and older state-based call sites.
     pub fn fromState(state: *const input.State) Input {
         return fromFrame(input_frame.Frame.init(

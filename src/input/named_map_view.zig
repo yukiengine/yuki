@@ -70,6 +70,18 @@ pub const NamedAxis1ActionEvent = named_events_mod.NamedAxis1ActionEvent;
 /// Named 2D axis action event payload.
 pub const NamedAxis2ActionEvent = named_events_mod.NamedAxis2ActionEvent;
 
+/// Mouse button enum used by pointer queries.
+pub const MouseButton = types.MouseButton;
+
+/// Named mouse motion event payload.
+pub const NamedMouseMotionEvent = named_events_mod.NamedMouseMotionEvent;
+
+/// Named mouse button event payload.
+pub const NamedMouseButtonEvent = named_events_mod.NamedMouseButtonEvent;
+
+/// Named mouse wheel event payload.
+pub const NamedMouseWheelEvent = named_events_mod.NamedMouseWheelEvent;
+
 /// Named binding descriptor.
 pub const NamedBinding = binding_descriptors_mod.NamedBinding;
 
@@ -227,6 +239,107 @@ pub const NamedInputMapView = struct {
     /// Returns true when a named 2D axis changed during this frame.
     pub fn axis2Changed(self: NamedInputMapView, action_name: []const u8) !bool {
         return self.frame().axis2Changed(action_name);
+    }
+
+    /// Returns the current mouse position in screen pixels.
+    pub fn mousePosition(self: NamedInputMapView) Vector2 {
+        return self.state.mousePosition();
+    }
+
+    /// Returns mouse movement accumulated during this frame.
+    pub fn mouseDelta(self: NamedInputMapView) Vector2 {
+        return self.state.mouseDelta();
+    }
+
+    /// Returns mouse wheel movement accumulated during this frame.
+    pub fn mouseWheel(self: NamedInputMapView) Vector2 {
+        return self.state.mouseWheel();
+    }
+
+    /// Returns true once the mouse has entered the app surface.
+    pub fn mouseInsideSurface(self: NamedInputMapView) bool {
+        return self.state.isMouseInsideWindow();
+    }
+
+    /// Returns true while a mouse button is held.
+    pub fn mouseButtonDown(self: NamedInputMapView, button: MouseButton) bool {
+        return self.state.isMouseButtonDown(button);
+    }
+
+    /// Returns true only on the frame a mouse button was pressed.
+    pub fn mouseButtonPressed(self: NamedInputMapView, button: MouseButton) bool {
+        return self.state.wasMouseButtonPressed(button);
+    }
+
+    /// Returns true only on the frame a mouse button was released.
+    pub fn mouseButtonReleased(self: NamedInputMapView, button: MouseButton) bool {
+        return self.state.wasMouseButtonReleased(button);
+    }
+
+    /// Returns the first mouse motion event in this frame.
+    pub fn firstMouseMoved(self: NamedInputMapView) ?NamedMouseMotionEvent {
+        var iterator = self.namedEvents().iter();
+
+        while (iterator.next()) |event| {
+            switch (event) {
+                .mouse_moved => |item| return item,
+                else => {},
+            }
+        }
+
+        return null;
+    }
+
+    /// Returns the first mouse button press event for a button.
+    pub fn firstMouseButtonPressed(
+        self: NamedInputMapView,
+        button: MouseButton,
+    ) ?NamedMouseButtonEvent {
+        var iterator = self.namedEvents().iter();
+
+        while (iterator.next()) |event| {
+            switch (event) {
+                .mouse_button_pressed => |item| {
+                    if (item.button == button) return item;
+                },
+                else => {},
+            }
+        }
+
+        return null;
+    }
+
+    /// Returns the first mouse button release event for a button.
+    pub fn firstMouseButtonReleased(
+        self: NamedInputMapView,
+        button: MouseButton,
+    ) ?NamedMouseButtonEvent {
+        var iterator = self.namedEvents().iter();
+
+        while (iterator.next()) |event| {
+            switch (event) {
+                .mouse_button_released => |item| {
+                    if (item.button == button) return item;
+                },
+                else => {},
+            }
+        }
+
+        return null;
+    }
+
+    /// Returns the first mouse wheel event in this frame.
+    pub fn firstMouseScrolled(self: NamedInputMapView) ?NamedMouseWheelEvent {
+        var iterator = self.namedEvents().iter();
+
+        while (iterator.next()) |event| {
+            switch (event) {
+                .mouse_scrolled => |item| return item,
+                else => {},
+            }
+        }
+
+        return null;
     }
 
     /// Returns the first named press event for a digital action.

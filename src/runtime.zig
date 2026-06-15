@@ -94,15 +94,15 @@ pub const App = struct {
 
     /// Advances app state by one frame.
     pub fn update(self: *App, dt_seconds: f32, surface_width: u32, surface_height: u32) void {
-        const input_snapshot = self.inputFrame();
+        const input_view = self.demoInputMapView();
 
-        if (input_snapshot.digitalPressed(demo.Controls.quit)) {
+        if (input_view.digitalPressed(demo.Controls.quit_name) catch unreachable) {
             self.requestQuit();
         }
 
         if (self.quit_requested) return;
 
-        const frame_input = demo.Input.fromFrame(input_snapshot);
+        const frame_input = demo.Input.fromNamedMapView(input_view) catch unreachable;
         self.demo_state.update(
             frame_input,
             dt_seconds,
@@ -165,6 +165,11 @@ pub const App = struct {
     /// Returns a named input frame for the demo gameplay map.
     pub fn demoInputFrame(self: *const App) input.NamedFrame {
         return self.input_session.namedFrame(demo.Controls.gameplay_map);
+    }
+
+    /// Returns the map-scoped named input API view for the demo gameplay map.
+    pub fn demoInputMapView(self: *const App) input.NamedInputMapView {
+        return self.input_session.namedMapViewByName(demo.Controls.gameplay_map_name) catch unreachable;
     }
 };
 

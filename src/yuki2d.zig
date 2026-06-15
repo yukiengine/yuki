@@ -91,6 +91,18 @@ pub const InputFrame = input_frame.Frame;
 /// Public named input frame view.
 pub const NamedInputFrame = input.NamedFrame;
 
+/// Public map-scoped named input view.
+pub const NamedInputMapView = input.NamedInputMapView;
+
+/// Public named input event.
+pub const NamedInputEvent = input.NamedInputEvent;
+
+/// Public named input event reader.
+pub const NamedInputEventReader = input.NamedEventReader;
+
+/// Public named input binding reader.
+pub const NamedInputBindingReader = input.NamedBindingReader;
+
 /// Public frame-local input event iterator.
 pub const InputEventIterator = input_frame.EventIterator;
 

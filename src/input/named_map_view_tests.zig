@@ -146,3 +146,53 @@ test "named input map view validates unknown maps and actions" {
         view.bindingCountForAction("player.missing"),
     );
 }
+
+test "named input map view exposes pointer state and pointer events" {
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addDigital("gameplay", "pointer.select");
+
+    try builder.bindMouseButtonName("gameplay", "pointer.select", "left");
+    try builder.activateMap("gameplay");
+
+    var session = try builder.build();
+
+    session.applyMouseMotion(input.Vector2.xy(10.0, 20.0));
+    try session.applyMouseButton(.left, true, input.Vector2.xy(10.0, 20.0));
+    session.applyMouseWheel(
+        input.Vector2.xy(0.0, -1.0),
+        input.Vector2.xy(10.0, 20.0),
+    );
+
+    const view = try session.namedMapViewByName("gameplay");
+
+    try std.testing.expectEqual(@as(f32, 10.0), view.mousePosition().x);
+    try std.testing.expectEqual(@as(f32, 20.0), view.mousePosition().y);
+    try std.testing.expectEqual(@as(f32, 10.0), view.mouseDelta().x);
+    try std.testing.expectEqual(@as(f32, 20.0), view.mouseDelta().y);
+    try std.testing.expectEqual(@as(f32, 0.0), view.mouseWheel().x);
+    try std.testing.expectEqual(@as(f32, -1.0), view.mouseWheel().y);
+
+    try std.testing.expect(view.mouseInsideSurface());
+    try std.testing.expect(view.mouseButtonDown(.left));
+    try std.testing.expect(view.mouseButtonPressed(.left));
+    try std.testing.expect(!view.mouseButtonReleased(.left));
+
+    const moved = view.firstMouseMoved() orelse return error.ExpectedMouseMoved;
+    try std.testing.expectEqual(@as(f32, 10.0), moved.position.x);
+    try std.testing.expectEqual(@as(f32, 20.0), moved.position.y);
+    try std.testing.expectEqual(@as(f32, 10.0), moved.delta.x);
+    try std.testing.expectEqual(@as(f32, 20.0), moved.delta.y);
+
+    const pressed = view.firstMouseButtonPressed(.left) orelse {
+        return error.ExpectedMouseButtonPressed;
+    };
+    try std.testing.expectEqual(input.MouseButton.left, pressed.button);
+    try std.testing.expectEqual(input.InputSourceKind.mouse, pressed.source.kind);
+    try std.testing.expectEqual(input.MouseButton.left, pressed.source.mouse_button.?);
+
+    const scrolled = view.firstMouseScrolled() orelse return error.ExpectedMouseScrolled;
+    try std.testing.expectEqual(@as(f32, 0.0), scrolled.wheel.x);
+    try std.testing.expectEqual(@as(f32, -1.0), scrolled.wheel.y);
+}
