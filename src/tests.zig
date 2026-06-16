@@ -1,10 +1,12 @@
 test {
+    _ = @import("input/tests.zig");
+    _ = @import("scripting/tests.zig");
+
     _ = @import("render2d.zig");
     _ = @import("yuki2d.zig");
     _ = @import("commands2d.zig");
     _ = @import("events2d.zig");
     _ = @import("events2d_tests.zig");
-    _ = @import("input/tests.zig");
     _ = @import("demo_input_tests.zig");
     _ = @import("prefab2d.zig");
     _ = @import("scene2d_support_tests.zig");

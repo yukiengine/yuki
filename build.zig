@@ -21,11 +21,11 @@ pub fn build(b: *std.Build) void {
     });
 
     // SDL
-    exe.root_module.link_libc = true;
-    exe.root_module.linkSystemLibrary("SDL3", .{ .use_pkg_config = .force });
+    // exe.root_module.link_libc = true;
+    // exe.root_module.linkSystemLibrary("SDL3", .{ .use_pkg_config = .force });
 
     // wgpu-native
-    exe.root_module.linkSystemLibrary("wgpu_native", .{ .use_pkg_config = .force });
+    // exe.root_module.linkSystemLibrary("wgpu_native", .{ .use_pkg_config = .force });
 
     b.installArtifact(exe);
 
@@ -63,10 +63,33 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
-    all_tests.root_module.link_libc = true;
-    all_tests.root_module.linkSystemLibrary("SDL3", .{ .use_pkg_config = .force });
-    all_tests.root_module.linkSystemLibrary("wgpu_native", .{ .use_pkg_config = .force });
-
     const run_all_tests = b.addRunArtifact(all_tests);
     test_step.dependOn(&run_all_tests.step);
+
+    linkNativeRuntime(mod);
+    addLuauBridge(b, mod);
+
+    linkNativeRuntime(exe.root_module);
+
+    linkNativeRuntime(all_tests.root_module);
+    addLuauBridge(b, all_tests.root_module);
+}
+
+fn linkNativeRuntime(module: *std.Build.Module) void {
+    module.link_libc = true;
+    module.link_libcpp = true;
+
+    module.linkSystemLibrary("SDL3", .{ .use_pkg_config = .force });
+    module.linkSystemLibrary("wgpu_native", .{ .use_pkg_config = .force });
+    module.linkSystemLibrary("luau", .{ .use_pkg_config = .force });
+}
+
+fn addLuauBridge(b: *std.Build, module: *std.Build.Module) void {
+    module.addIncludePath(b.path("src"));
+    module.addCSourceFile(.{
+        .file = b.path("src/backend/luau_bridge.cpp"),
+        .flags = &.{
+            "-std=c++17",
+        },
+    });
 }
