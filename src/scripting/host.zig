@@ -77,6 +77,8 @@ pub const ScriptHost = struct {
     pub fn init() Error!ScriptHost {
         const state = luau.createState() orelse return Error.CreateStateFailed;
 
+        luau.installVector2(state);
+
         return .{
             .state = state,
         };

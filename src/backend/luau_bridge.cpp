@@ -114,3 +114,234 @@ extern "C" void yuki_luau_set_readonly(lua_State *state, int index,
                                        int enabled) {
   lua_setreadonly(state, index, enabled);
 }
+
+struct YukiBridgeVector2 {
+  double x;
+  double y;
+};
+
+static int yuki_luau_raise(lua_State *state, const char *message) {
+  lua_pushstring(state, message);
+  lua_error(state);
+  return 0;
+}
+
+static bool yuki_luau_read_number(lua_State *state, int index, double *out) {
+  int is_number = 0;
+  const double value = lua_tonumberx(state, index, &is_number);
+
+  if (!is_number)
+    return false;
+
+  *out = value;
+  return true;
+}
+
+static bool yuki_luau_read_vector2(lua_State *state, int index,
+                                   YukiBridgeVector2 *out) {
+  const int table_index = lua_absindex(state, index);
+
+  if (!lua_istable(state, table_index))
+    return false;
+
+  double x = 0.0;
+  double y = 0.0;
+
+  lua_getfield(state, table_index, "x");
+  const bool has_x = yuki_luau_read_number(state, -1, &x);
+  lua_pop(state, 1);
+
+  lua_getfield(state, table_index, "y");
+  const bool has_y = yuki_luau_read_number(state, -1, &y);
+  lua_pop(state, 1);
+
+  if (!has_x || !has_y)
+    return false;
+
+  out->x = x;
+  out->y = y;
+  return true;
+}
+
+static void yuki_luau_set_number_field(lua_State *state, int table_index,
+                                       const char *name, double value) {
+  lua_pushnumber(state, value);
+  lua_setfield(state, table_index, name);
+}
+
+static void yuki_luau_set_function_field(lua_State *state, int table_index,
+                                         const char *name, lua_CFunction fn,
+                                         const char *debug_name) {
+  lua_pushcfunction(state, fn, debug_name);
+  lua_setfield(state, table_index, name);
+}
+
+static int yuki_vector2_new(lua_State *state);
+static int yuki_vector2_add(lua_State *state);
+static int yuki_vector2_sub(lua_State *state);
+static int yuki_vector2_mul(lua_State *state);
+static int yuki_vector2_div(lua_State *state);
+static int yuki_vector2_unm(lua_State *state);
+static int yuki_vector2_eq(lua_State *state);
+
+static void yuki_luau_push_vector2_metatable(lua_State *state) {
+  lua_createtable(state, 0, 8);
+
+  const int metatable_index = lua_absindex(state, -1);
+
+  lua_pushvalue(state, metatable_index);
+  lua_setfield(state, metatable_index, "__index");
+
+  yuki_luau_set_function_field(state, metatable_index, "__add",
+                               yuki_vector2_add, "Vector2.__add");
+  yuki_luau_set_function_field(state, metatable_index, "__sub",
+                               yuki_vector2_sub, "Vector2.__sub");
+  yuki_luau_set_function_field(state, metatable_index, "__mul",
+                               yuki_vector2_mul, "Vector2.__mul");
+  yuki_luau_set_function_field(state, metatable_index, "__div",
+                               yuki_vector2_div, "Vector2.__div");
+  yuki_luau_set_function_field(state, metatable_index, "__unm",
+                               yuki_vector2_unm, "Vector2.__unm");
+  yuki_luau_set_function_field(state, metatable_index, "__eq", yuki_vector2_eq,
+                               "Vector2.__eq");
+
+  lua_setreadonly(state, metatable_index, 1);
+}
+
+static void yuki_luau_push_vector2(lua_State *state, double x, double y) {
+  lua_createtable(state, 0, 2);
+
+  const int vector_index = lua_absindex(state, -1);
+
+  yuki_luau_set_number_field(state, vector_index, "x", x);
+  yuki_luau_set_number_field(state, vector_index, "y", y);
+
+  yuki_luau_push_vector2_metatable(state);
+  lua_setmetatable(state, vector_index);
+
+  lua_setreadonly(state, vector_index, 1);
+}
+
+static int yuki_vector2_new(lua_State *state) {
+  double x = 0.0;
+  double y = 0.0;
+
+  if (!yuki_luau_read_number(state, 1, &x))
+    return yuki_luau_raise(state, "Vector2.new expected number x");
+
+  if (!yuki_luau_read_number(state, 2, &y))
+    return yuki_luau_raise(state, "Vector2.new expected number y");
+
+  yuki_luau_push_vector2(state, x, y);
+  return 1;
+}
+
+static int yuki_vector2_add(lua_State *state) {
+  YukiBridgeVector2 left = {};
+  YukiBridgeVector2 right = {};
+
+  if (!yuki_luau_read_vector2(state, 1, &left) ||
+      !yuki_luau_read_vector2(state, 2, &right))
+    return yuki_luau_raise(state,
+                           "Vector2 addition expects two Vector2 values");
+
+  yuki_luau_push_vector2(state, left.x + right.x, left.y + right.y);
+  return 1;
+}
+
+static int yuki_vector2_sub(lua_State *state) {
+  YukiBridgeVector2 left = {};
+  YukiBridgeVector2 right = {};
+
+  if (!yuki_luau_read_vector2(state, 1, &left) ||
+      !yuki_luau_read_vector2(state, 2, &right))
+    return yuki_luau_raise(state,
+                           "Vector2 subtraction expects two Vector2 values");
+
+  yuki_luau_push_vector2(state, left.x - right.x, left.y - right.y);
+  return 1;
+}
+
+static int yuki_vector2_mul(lua_State *state) {
+  YukiBridgeVector2 vector = {};
+  double scalar = 0.0;
+
+  if (yuki_luau_read_vector2(state, 1, &vector) &&
+      yuki_luau_read_number(state, 2, &scalar)) {
+    yuki_luau_push_vector2(state, vector.x * scalar, vector.y * scalar);
+    return 1;
+  }
+
+  if (yuki_luau_read_number(state, 1, &scalar) &&
+      yuki_luau_read_vector2(state, 2, &vector)) {
+    yuki_luau_push_vector2(state, vector.x * scalar, vector.y * scalar);
+    return 1;
+  }
+
+  return yuki_luau_raise(state,
+                         "Vector2 multiplication expects Vector2 and number");
+}
+
+static int yuki_vector2_div(lua_State *state) {
+  YukiBridgeVector2 vector = {};
+  double scalar = 0.0;
+
+  if (!yuki_luau_read_vector2(state, 1, &vector) ||
+      !yuki_luau_read_number(state, 2, &scalar))
+    return yuki_luau_raise(state,
+                           "Vector2 division expects Vector2 and number");
+
+  if (scalar == 0.0)
+    return yuki_luau_raise(state, "Vector2 division by zero");
+
+  yuki_luau_push_vector2(state, vector.x / scalar, vector.y / scalar);
+  return 1;
+}
+
+static int yuki_vector2_unm(lua_State *state) {
+  YukiBridgeVector2 vector = {};
+
+  if (!yuki_luau_read_vector2(state, 1, &vector))
+    return yuki_luau_raise(state, "Vector2 negation expects Vector2");
+
+  yuki_luau_push_vector2(state, -vector.x, -vector.y);
+  return 1;
+}
+
+static int yuki_vector2_eq(lua_State *state) {
+  YukiBridgeVector2 left = {};
+  YukiBridgeVector2 right = {};
+
+  if (!yuki_luau_read_vector2(state, 1, &left) ||
+      !yuki_luau_read_vector2(state, 2, &right)) {
+    lua_pushboolean(state, 0);
+    return 1;
+  }
+
+  lua_pushboolean(state, left.x == right.x && left.y == right.y);
+  return 1;
+}
+
+extern "C" void yuki_luau_install_vector2(lua_State *state) {
+  lua_createtable(state, 0, 5);
+
+  const int api_index = lua_absindex(state, -1);
+
+  yuki_luau_set_function_field(state, api_index, "new", yuki_vector2_new,
+                               "Vector2.new");
+
+  yuki_luau_push_vector2(state, 0.0, 0.0);
+  lua_setfield(state, api_index, "zero");
+
+  yuki_luau_push_vector2(state, 1.0, 1.0);
+  lua_setfield(state, api_index, "one");
+
+  yuki_luau_push_vector2(state, 1.0, 0.0);
+  lua_setfield(state, api_index, "right");
+
+  yuki_luau_push_vector2(state, 0.0, 1.0);
+  lua_setfield(state, api_index, "up");
+
+  lua_setreadonly(state, api_index, 1);
+  lua_setglobal(state, "Vector2");
+}

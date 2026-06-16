@@ -90,6 +90,9 @@ void yuki_luau_create_table(lua_State *state, int array_count,
 /* Marks a table as readonly or writable. */
 void yuki_luau_set_readonly(lua_State *state, int index, int enabled);
 
+/* Installs Yuki's immutable Vector2 API into the Luau global table. */
+void yuki_luau_install_vector2(lua_State *state);
+
 #ifdef __cplusplus
 }
 #endif

@@ -157,3 +157,8 @@ pub fn createTable(state: *State, array_count: i32, record_count: i32) void {
 pub fn setReadonly(state: *State, index: i32, enabled: bool) void {
     c.yuki_luau_set_readonly(state, index, if (enabled) 1 else 0);
 }
+
+/// Installs Yuki's immutable Vector2 API into the Luau global table.
+pub fn installVector2(state: *State) void {
+    c.yuki_luau_install_vector2(state);
+}
