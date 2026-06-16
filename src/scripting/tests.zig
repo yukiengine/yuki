@@ -146,7 +146,7 @@ test "script host calls init and update lifecycle functions" {
         \\}
         \\
         \\function script.init(ctx)
-        \\    if ctx ~= nil then
+        \\    if ctx == nil then
         \\        local bad = nil
         \\        bad()
         \\    end
@@ -155,7 +155,7 @@ test "script host calls init and update lifecycle functions" {
         \\end
         \\
         \\function script.update(ctx, dt)
-        \\    if ctx ~= nil then
+        \\    if ctx == nil then
         \\        local bad = nil
         \\        bad()
         \\    end
@@ -205,6 +205,111 @@ test "script host reports lifecycle runtime errors" {
     defer host.deinit();
 
     var module = try host.loadModuleFromSource(source, "runtime_error");
+    defer module.deinit(&host);
+
+    try std.testing.expectError(
+        scripting.ScriptHostError.RuntimeFailed,
+        module.callUpdate(&host, 0.016),
+    );
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host passes a real context table to init" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.init(ctx)
+        \\    if ctx == nil then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\end
+        \\
+        \\return script
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "init_context_table");
+    defer module.deinit(&host);
+
+    try module.callInit(&host);
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host passes a real context table to update" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.update(ctx, dt)
+        \\    if ctx == nil then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\
+        \\    if dt <= 0 then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\end
+        \\
+        \\return script
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "update_context_table");
+    defer module.deinit(&host);
+
+    try module.callUpdate(&host, 0.016);
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host context is readonly during init" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.init(ctx)
+        \\    ctx.anything = true
+        \\end
+        \\
+        \\return script
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "readonly_init_context");
+    defer module.deinit(&host);
+
+    try std.testing.expectError(
+        scripting.ScriptHostError.RuntimeFailed,
+        module.callInit(&host),
+    );
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host context is readonly during update" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.update(ctx, dt)
+        \\    ctx.anything = dt
+        \\end
+        \\
+        \\return script
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "readonly_update_context");
     defer module.deinit(&host);
 
     try std.testing.expectError(

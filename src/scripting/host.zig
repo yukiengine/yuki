@@ -2,8 +2,10 @@
 //!
 //! This layer proves Yuki can compile a Luau source module, run its top-level
 //! chunk, require the module to return a table, resolve optional lifecycle
-//! functions, and call them while keeping the Luau stack balanced. The temporary
-//! lifecycle context is nil until the real Yuki runtime ctx is bound later.
+//! functions, and call them with a real callback context while keeping the Luau
+//! stack balanced. The context is intentionally empty and readonly until the
+//! input/world APIs are bound; this avoids exposing placeholder runtime fields
+//! that scripts might accidentally depend on.
 
 const luau = @import("../backend/luau.zig");
 
@@ -168,7 +170,7 @@ pub const ScriptHost = struct {
             return Error.ScriptLifecycleNotFunction;
         }
 
-        luau.pushNil(self.state);
+        self.pushCallbackContext();
         try luau.call(self.state, 1, 0);
 
         self.restoreStack(initial_top);
@@ -188,11 +190,16 @@ pub const ScriptHost = struct {
             return Error.ScriptLifecycleNotFunction;
         }
 
-        luau.pushNil(self.state);
+        self.pushCallbackContext();
         luau.pushNumber(self.state, dt);
         try luau.call(self.state, 2, 0);
 
         self.restoreStack(initial_top);
+    }
+
+    fn pushCallbackContext(self: *ScriptHost) void {
+        luau.createTable(self.state, 0, 0);
+        luau.setReadonly(self.state, -1, true);
     }
 
     fn releaseRegistryRef(self: *ScriptHost, registry_ref: i32) void {

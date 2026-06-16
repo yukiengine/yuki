@@ -83,6 +83,13 @@ void yuki_luau_push_nil(lua_State *state);
 /* Pushes a numeric value onto the stack. */
 void yuki_luau_push_number(lua_State *state, double value);
 
+/* Pushes a new table onto the stack. */
+void yuki_luau_create_table(lua_State *state, int array_count,
+                            int record_count);
+
+/* Marks a table as readonly or writable. */
+void yuki_luau_set_readonly(lua_State *state, int index, int enabled);
+
 #ifdef __cplusplus
 }
 #endif

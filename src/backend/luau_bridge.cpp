@@ -104,3 +104,13 @@ extern "C" void yuki_luau_push_nil(lua_State *state) { lua_pushnil(state); }
 extern "C" void yuki_luau_push_number(lua_State *state, double value) {
   lua_pushnumber(state, value);
 }
+
+extern "C" void yuki_luau_create_table(lua_State *state, int array_count,
+                                       int record_count) {
+  lua_createtable(state, array_count, record_count);
+}
+
+extern "C" void yuki_luau_set_readonly(lua_State *state, int index,
+                                       int enabled) {
+  lua_setreadonly(state, index, enabled);
+}

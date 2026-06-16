@@ -147,3 +147,13 @@ pub fn pushNil(state: *State) void {
 pub fn pushNumber(state: *State, value: f64) void {
     c.yuki_luau_push_number(state, value);
 }
+
+/// Pushes a new table onto the stack.
+pub fn createTable(state: *State, array_count: i32, record_count: i32) void {
+    c.yuki_luau_create_table(state, array_count, record_count);
+}
+
+/// Marks a table as readonly or writable.
+pub fn setReadonly(state: *State, index: i32, enabled: bool) void {
+    c.yuki_luau_set_readonly(state, index, if (enabled) 1 else 0);
+}
