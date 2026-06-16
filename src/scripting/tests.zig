@@ -6,6 +6,8 @@
 const std = @import("std");
 const scripting = @import("mod.zig");
 const input = @import("../input/mod.zig");
+const scene2d = @import("../scene2d.zig");
+const render2d = @import("../render2d.zig");
 
 test "script host creates an empty Luau stack" {
     var host = try scripting.ScriptHost.init();
@@ -927,4 +929,214 @@ test "script host leaves ctx input absent without input context" {
     );
 
     try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script world binds and requires actors by key" {
+    var scene = scene2d.Scene.init();
+
+    const player = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(12.0, 24.0),
+        .size = render2d.Vector2.xy(16.0, 16.0),
+    });
+
+    var script_world = scripting.ScriptWorld.init(&scene);
+
+    try script_world.bindActor("player", player);
+
+    try std.testing.expectEqual(@as(usize, 1), script_world.count());
+    try std.testing.expect(script_world.containsActor("player"));
+    try std.testing.expect(!script_world.containsActor("missing"));
+
+    const handle = try script_world.requireActor("player");
+
+    try std.testing.expectEqualStrings("player", handle.keyName());
+    try std.testing.expect(handle.actorId().eql(player));
+    try std.testing.expect(handle.isAlive(&script_world));
+
+    const position = try handle.position(&script_world);
+    try std.testing.expectEqual(@as(f32, 12.0), position.x);
+    try std.testing.expectEqual(@as(f32, 24.0), position.y);
+}
+
+test "script world actor returns null for missing actor key" {
+    var scene = scene2d.Scene.init();
+    var script_world = scripting.ScriptWorld.init(&scene);
+
+    try std.testing.expect(script_world.isEmpty());
+    try std.testing.expect(script_world.actor("missing") == null);
+
+    try std.testing.expectError(
+        scripting.ScriptWorldError.MissingScriptActor,
+        script_world.requireActor("missing"),
+    );
+}
+
+test "script world rejects duplicate actor keys" {
+    var scene = scene2d.Scene.init();
+
+    const player = try scene.world.spawn(.{});
+    const other = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(8.0, 8.0),
+    });
+
+    var script_world = scripting.ScriptWorld.init(&scene);
+
+    try script_world.bindActor("player", player);
+
+    try std.testing.expectError(
+        scripting.ScriptWorldError.DuplicateScriptActorKey,
+        script_world.bindActor("player", other),
+    );
+}
+
+test "script world put actor replaces an existing key" {
+    var scene = scene2d.Scene.init();
+
+    const first = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(1.0, 2.0),
+    });
+
+    const second = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(3.0, 4.0),
+    });
+
+    var script_world = scripting.ScriptWorld.init(&scene);
+
+    try script_world.bindActor("player", first);
+    try script_world.putActor("player", second);
+
+    const handle = try script_world.requireActor("player");
+    try std.testing.expect(handle.actorId().eql(second));
+
+    const position = try handle.position(&script_world);
+    try std.testing.expectEqual(@as(f32, 3.0), position.x);
+    try std.testing.expectEqual(@as(f32, 4.0), position.y);
+}
+
+test "script world unbind removes actor key without despawning" {
+    var scene = scene2d.Scene.init();
+
+    const player = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(12.0, 24.0),
+    });
+
+    var script_world = scripting.ScriptWorld.init(&scene);
+
+    try script_world.bindActor("player", player);
+
+    try std.testing.expect(script_world.unbindActor("player"));
+    try std.testing.expect(!script_world.unbindActor("player"));
+    try std.testing.expectEqual(@as(usize, 0), script_world.count());
+
+    try std.testing.expect(scene.actorConst(player) != null);
+    try std.testing.expect(script_world.actor("player") == null);
+}
+
+test "script world detects stale actor handles" {
+    var scene = scene2d.Scene.init();
+
+    const player = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(12.0, 24.0),
+    });
+
+    var script_world = scripting.ScriptWorld.init(&scene);
+
+    try script_world.bindActor("player", player);
+
+    const handle = try script_world.requireActor("player");
+    scene.world.despawn(player);
+
+    try std.testing.expect(!handle.isAlive(&script_world));
+    try std.testing.expect(script_world.actor("player") == null);
+
+    try std.testing.expectError(
+        scripting.ScriptWorldError.StaleScriptActor,
+        script_world.requireActor("player"),
+    );
+
+    try std.testing.expectError(
+        scripting.ScriptWorldError.StaleScriptActor,
+        handle.position(&script_world),
+    );
+}
+
+test "script world reads writes and moves actor position" {
+    var scene = scene2d.Scene.init();
+
+    const player = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(2.0, 4.0),
+    });
+
+    var script_world = scripting.ScriptWorld.init(&scene);
+
+    try script_world.bindActor("player", player);
+
+    const handle = try script_world.requireActor("player");
+
+    try handle.setPosition(
+        &script_world,
+        render2d.Vector2.xy(10.0, 20.0),
+    );
+
+    var position = try handle.position(&script_world);
+    try std.testing.expectEqual(@as(f32, 10.0), position.x);
+    try std.testing.expectEqual(@as(f32, 20.0), position.y);
+
+    try handle.moveBy(
+        &script_world,
+        render2d.Vector2.xy(3.0, -5.0),
+    );
+
+    position = try handle.position(&script_world);
+    try std.testing.expectEqual(@as(f32, 13.0), position.x);
+    try std.testing.expectEqual(@as(f32, 15.0), position.y);
+}
+
+test "script context carries world access" {
+    var scene = scene2d.Scene.init();
+
+    const player = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(4.0, 8.0),
+    });
+
+    var script_world = scripting.ScriptWorld.init(&scene);
+
+    try script_world.bindActor("player", player);
+
+    const context = scripting.ScriptContext
+        .empty()
+        .withWorld(&script_world);
+
+    try std.testing.expect(context.hasWorld());
+
+    const handle = try context.worldRequireActor("player");
+    const position = try context.worldActorPosition(handle);
+
+    try std.testing.expectEqual(@as(f32, 4.0), position.x);
+    try std.testing.expectEqual(@as(f32, 8.0), position.y);
+
+    try context.moveWorldActorBy(
+        handle,
+        render2d.Vector2.xy(1.0, 2.0),
+    );
+
+    const moved = try context.worldActorPosition(handle);
+    try std.testing.expectEqual(@as(f32, 5.0), moved.x);
+    try std.testing.expectEqual(@as(f32, 10.0), moved.y);
+}
+
+test "script context reports missing world access" {
+    const context = scripting.ScriptContext.empty();
+
+    try std.testing.expect(!context.hasWorld());
+
+    try std.testing.expectError(
+        scripting.ScriptContextError.MissingWorld,
+        context.requireWorld(),
+    );
+
+    try std.testing.expectError(
+        scripting.ScriptContextError.MissingWorld,
+        context.worldRequireActor("player"),
+    );
 }

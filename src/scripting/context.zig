@@ -10,12 +10,21 @@
 //! state. That keeps ownership in the app/runtime layer and prevents scripts
 //! from extending the lifetime of per-frame data.
 
+const world_mod = @import("world.zig");
+
+/// Script-facing keyed actor registry.
+pub const ScriptWorld = world_mod.ScriptWorld;
+
+/// Script-facing actor handle.
+pub const ScriptActor = world_mod.ScriptActor;
+
 const input = @import("../input/mod.zig");
 
 /// Errors returned by script context runtime lookups.
 pub const Error = error{
     MissingInput,
-} || input.Error;
+    MissingWorld,
+} || input.Error || world_mod.Error;
 
 /// Runtime input owner borrowed by ScriptContext.
 pub const InputSession = input.InputSession;
@@ -33,6 +42,9 @@ pub const MouseButton = input.MouseButton;
 pub const ScriptContext = struct {
     /// Borrowed input session for the current frame, when input is available.
     input_session: ?*const InputSession = null,
+
+    /// Borrowed script world for the current frame, when world access is available.
+    script_world: ?*ScriptWorld = null,
 
     /// Creates a context with no runtime systems attached.
     pub fn empty() ScriptContext {
@@ -183,5 +195,73 @@ pub const ScriptContext = struct {
     ) Error!bool {
         const view = try self.inputMap(map_name);
         return view.mouseButtonReleased(button);
+    }
+
+    /// Creates a context that exposes a keyed script world.
+    pub fn fromWorld(script_world: *ScriptWorld) ScriptContext {
+        return .{
+            .script_world = script_world,
+        };
+    }
+
+    /// Returns a copy of this context with a script world attached.
+    pub fn withWorld(self: ScriptContext, script_world: *ScriptWorld) ScriptContext {
+        var next = self;
+        next.script_world = script_world;
+        return next;
+    }
+
+    /// Returns true when world APIs can be queried through this context.
+    pub fn hasWorld(self: ScriptContext) bool {
+        return self.script_world != null;
+    }
+
+    /// Returns the borrowed script world or an explicit missing-world error.
+    pub fn requireWorld(self: ScriptContext) Error!*ScriptWorld {
+        return self.script_world orelse Error.MissingWorld;
+    }
+
+    /// Returns a script actor by key or null when absent or stale.
+    pub fn worldActor(self: ScriptContext, key: []const u8) Error!?ScriptActor {
+        const world = try self.requireWorld();
+        return world.actor(key);
+    }
+
+    /// Returns a script actor by key or errors when absent or stale.
+    pub fn worldRequireActor(self: ScriptContext, key: []const u8) Error!ScriptActor {
+        const world = try self.requireWorld();
+        return try world.requireActor(key);
+    }
+
+    /// Returns true when a keyed script actor is currently alive.
+    pub fn worldActorAlive(self: ScriptContext, actor: ScriptActor) Error!bool {
+        const world = try self.requireWorld();
+        return world.isActorAlive(actor);
+    }
+
+    /// Reads a keyed script actor position.
+    pub fn worldActorPosition(self: ScriptContext, actor: ScriptActor) Error!Vector2 {
+        const world = try self.requireWorld();
+        return try world.actorPosition(actor);
+    }
+
+    /// Replaces a keyed script actor position.
+    pub fn setWorldActorPosition(
+        self: ScriptContext,
+        actor: ScriptActor,
+        position: Vector2,
+    ) Error!void {
+        const world = try self.requireWorld();
+        try world.setActorPosition(actor, position);
+    }
+
+    /// Moves a keyed script actor by a delta.
+    pub fn moveWorldActorBy(
+        self: ScriptContext,
+        actor: ScriptActor,
+        delta: Vector2,
+    ) Error!void {
+        const world = try self.requireWorld();
+        try world.moveActorBy(actor, delta);
     }
 };
