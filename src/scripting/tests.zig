@@ -75,3 +75,142 @@ test "script host keeps stack balanced after load failure" {
 
     try std.testing.expectEqual(@as(i32, 0), host.stackTop());
 }
+
+test "script host resolves optional lifecycle functions" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.init(ctx)
+        \\end
+        \\
+        \\function script.update(ctx, dt)
+        \\end
+        \\
+        \\return script
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "lifecycle_fields");
+    defer module.deinit(&host);
+
+    try std.testing.expect(module.hasInit());
+    try std.testing.expect(module.hasUpdate());
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host allows missing lifecycle functions" {
+    const source =
+        \\return {}
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "missing_lifecycle");
+    defer module.deinit(&host);
+
+    try std.testing.expect(!module.hasInit());
+    try std.testing.expect(!module.hasUpdate());
+
+    try module.callInit(&host);
+    try module.callUpdate(&host, 1.0);
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host rejects non-function lifecycle fields" {
+    const source =
+        \\return {
+        \\    init = 42,
+        \\}
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    try std.testing.expectError(
+        scripting.ScriptHostError.ScriptLifecycleNotFunction,
+        host.loadModuleFromSource(source, "bad_lifecycle_field"),
+    );
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host calls init and update lifecycle functions" {
+    const source =
+        \\local script = {
+        \\    initialized = false,
+        \\    updates = 0,
+        \\}
+        \\
+        \\function script.init(ctx)
+        \\    if ctx ~= nil then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\
+        \\    script.initialized = true
+        \\end
+        \\
+        \\function script.update(ctx, dt)
+        \\    if ctx ~= nil then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\
+        \\    if not script.initialized then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\
+        \\    if dt <= 0 then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\
+        \\    script.updates = script.updates + 1
+        \\end
+        \\
+        \\return script
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "call_lifecycle");
+    defer module.deinit(&host);
+
+    try module.callInit(&host);
+    try module.callUpdate(&host, 0.016);
+    try module.callUpdate(&host, 0.032);
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host reports lifecycle runtime errors" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.update(ctx, dt)
+        \\    local missing = nil
+        \\    missing()
+        \\end
+        \\
+        \\return script
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "runtime_error");
+    defer module.deinit(&host);
+
+    try std.testing.expectError(
+        scripting.ScriptHostError.RuntimeFailed,
+        module.callUpdate(&host, 0.016),
+    );
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}

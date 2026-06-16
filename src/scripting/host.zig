@@ -1,41 +1,69 @@
 //! Minimal Luau script host.
 //!
 //! This layer proves Yuki can compile a Luau source module, run its top-level
-//! chunk, require the module to return a table, and keep that table alive in the
-//! Luau registry. It does not expose `ctx`, input, actors, or lifecycle calls
-//! yet; those come after the module loading boundary is reliable.
+//! chunk, require the module to return a table, resolve optional lifecycle
+//! functions, and call them while keeping the Luau stack balanced. The temporary
+//! lifecycle context is nil until the real Yuki runtime ctx is bound later.
 
 const luau = @import("../backend/luau.zig");
 
-/// Errors that can happen while creating or loading scripts.
+const invalid_ref: i32 = -1;
+
+/// Errors that can happen while creating, loading, or running scripts.
 pub const Error = error{
     CreateStateFailed,
     CompileFailed,
     LoadFailed,
     RuntimeFailed,
     ScriptDidNotReturnTable,
+    ScriptLifecycleNotFunction,
 };
 
 /// A loaded Luau script module table pinned in the VM registry.
 pub const ScriptModule = struct {
     table_ref: i32,
+    init_ref: i32,
+    update_ref: i32,
 
     /// Returns true when this module owns a registry reference.
     pub fn isLoaded(self: ScriptModule) bool {
         return self.table_ref >= 0;
     }
 
-    /// Returns the internal registry reference for tests and future host code.
+    /// Returns true when the module exposes an init lifecycle function.
+    pub fn hasInit(self: ScriptModule) bool {
+        return self.init_ref >= 0;
+    }
+
+    /// Returns true when the module exposes an update lifecycle function.
+    pub fn hasUpdate(self: ScriptModule) bool {
+        return self.update_ref >= 0;
+    }
+
+    /// Returns the internal table registry reference for tests and future host code.
     pub fn registryRef(self: ScriptModule) i32 {
         return self.table_ref;
     }
 
-    /// Releases the module table registry reference.
+    /// Calls init(ctx) when the module defines it.
+    pub fn callInit(self: *const ScriptModule, host: *ScriptHost) Error!void {
+        try host.callLifecycleWithContextOnly(self.init_ref);
+    }
+
+    /// Calls update(ctx, dt) when the module defines it.
+    pub fn callUpdate(self: *const ScriptModule, host: *ScriptHost, dt: f64) Error!void {
+        try host.callLifecycleWithDelta(self.update_ref, dt);
+    }
+
+    /// Releases module table and lifecycle registry references.
     pub fn deinit(self: *ScriptModule, host: *ScriptHost) void {
-        if (self.isLoaded()) {
-            luau.unref(host.state, self.table_ref);
-            self.table_ref = -1;
-        }
+        host.releaseRegistryRef(self.init_ref);
+        host.releaseRegistryRef(self.update_ref);
+        host.releaseRegistryRef(self.table_ref);
+
+        self.table_ref = invalid_ref;
+        self.init_ref = invalid_ref;
+        self.update_ref = invalid_ref;
     }
 };
 
@@ -77,11 +105,19 @@ pub const ScriptHost = struct {
             return Error.ScriptDidNotReturnTable;
         }
 
+        const init_ref = try self.resolveLifecycleField(-1, "init");
+        errdefer self.releaseRegistryRef(init_ref);
+
+        const update_ref = try self.resolveLifecycleField(-1, "update");
+        errdefer self.releaseRegistryRef(update_ref);
+
         const table_ref = luau.ref(self.state, -1);
         luau.pop(self.state, 1);
 
         return .{
             .table_ref = table_ref,
+            .init_ref = init_ref,
+            .update_ref = update_ref,
         };
     }
 
@@ -93,6 +129,76 @@ pub const ScriptHost = struct {
     /// Returns the raw VM state for the next internal scripting layer.
     pub fn rawState(self: *ScriptHost) *luau.State {
         return self.state;
+    }
+
+    fn resolveLifecycleField(
+        self: *ScriptHost,
+        table_index: i32,
+        field_name: [:0]const u8,
+    ) Error!i32 {
+        luau.getField(self.state, table_index, field_name);
+
+        if (luau.isNil(self.state, -1)) {
+            luau.pop(self.state, 1);
+            return invalid_ref;
+        }
+
+        if (!luau.isFunction(self.state, -1)) {
+            luau.pop(self.state, 1);
+            return Error.ScriptLifecycleNotFunction;
+        }
+
+        const function_ref = luau.ref(self.state, -1);
+        luau.pop(self.state, 1);
+
+        return function_ref;
+    }
+
+    fn callLifecycleWithContextOnly(self: *ScriptHost, function_ref: i32) Error!void {
+        if (function_ref < 0) {
+            return;
+        }
+
+        const initial_top = self.stackTop();
+        errdefer self.restoreStack(initial_top);
+
+        luau.getRef(self.state, function_ref);
+
+        if (!luau.isFunction(self.state, -1)) {
+            return Error.ScriptLifecycleNotFunction;
+        }
+
+        luau.pushNil(self.state);
+        try luau.call(self.state, 1, 0);
+
+        self.restoreStack(initial_top);
+    }
+
+    fn callLifecycleWithDelta(self: *ScriptHost, function_ref: i32, dt: f64) Error!void {
+        if (function_ref < 0) {
+            return;
+        }
+
+        const initial_top = self.stackTop();
+        errdefer self.restoreStack(initial_top);
+
+        luau.getRef(self.state, function_ref);
+
+        if (!luau.isFunction(self.state, -1)) {
+            return Error.ScriptLifecycleNotFunction;
+        }
+
+        luau.pushNil(self.state);
+        luau.pushNumber(self.state, dt);
+        try luau.call(self.state, 2, 0);
+
+        self.restoreStack(initial_top);
+    }
+
+    fn releaseRegistryRef(self: *ScriptHost, registry_ref: i32) void {
+        if (registry_ref >= 0) {
+            luau.unref(self.state, registry_ref);
+        }
     }
 
     fn restoreStack(self: *ScriptHost, top: i32) void {

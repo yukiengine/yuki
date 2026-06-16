@@ -81,3 +81,26 @@ extern "C" void yuki_luau_pop(lua_State *state, int count) {
 extern "C" const char *yuki_luau_to_string(lua_State *state, int index) {
   return lua_tolstring(state, index, nullptr);
 }
+
+extern "C" void yuki_luau_get_ref(lua_State *state, int ref) {
+  lua_getref(state, ref);
+}
+
+extern "C" int yuki_luau_get_field(lua_State *state, int index,
+                                   const char *field_name) {
+  return lua_getfield(state, index, field_name);
+}
+
+extern "C" int yuki_luau_is_nil(lua_State *state, int index) {
+  return lua_isnil(state, index);
+}
+
+extern "C" int yuki_luau_is_function(lua_State *state, int index) {
+  return lua_isfunction(state, index);
+}
+
+extern "C" void yuki_luau_push_nil(lua_State *state) { lua_pushnil(state); }
+
+extern "C" void yuki_luau_push_number(lua_State *state, double value) {
+  lua_pushnumber(state, value);
+}

@@ -65,6 +65,24 @@ void yuki_luau_pop(lua_State *state, int count);
 /* Returns a stack value as a string when Luau can represent it that way. */
 const char *yuki_luau_to_string(lua_State *state, int index);
 
+/* Pushes a registry-referenced value onto the stack. */
+void yuki_luau_get_ref(lua_State *state, int ref);
+
+/* Pushes table[field_name] onto the stack and returns the Luau value type. */
+int yuki_luau_get_field(lua_State *state, int index, const char *field_name);
+
+/* Returns true when the stack value at index is nil. */
+int yuki_luau_is_nil(lua_State *state, int index);
+
+/* Returns true when the stack value at index is a function. */
+int yuki_luau_is_function(lua_State *state, int index);
+
+/* Pushes nil onto the stack for the temporary ctx placeholder. */
+void yuki_luau_push_nil(lua_State *state);
+
+/* Pushes a numeric value onto the stack. */
+void yuki_luau_push_number(lua_State *state, double value);
+
 #ifdef __cplusplus
 }
 #endif

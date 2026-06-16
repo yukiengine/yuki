@@ -117,3 +117,33 @@ fn statusToError(status: c_int) Error!void {
         else => Error.RuntimeFailed,
     };
 }
+
+/// Pushes a registry-referenced value onto the stack.
+pub fn getRef(state: *State, registry_ref: i32) void {
+    c.yuki_luau_get_ref(state, registry_ref);
+}
+
+/// Pushes table[field_name] onto the stack.
+pub fn getField(state: *State, index: i32, field_name: [:0]const u8) void {
+    _ = c.yuki_luau_get_field(state, index, field_name.ptr);
+}
+
+/// Returns true when the stack value at index is nil.
+pub fn isNil(state: *State, index: i32) bool {
+    return c.yuki_luau_is_nil(state, index) != 0;
+}
+
+/// Returns true when the stack value at index is a function.
+pub fn isFunction(state: *State, index: i32) bool {
+    return c.yuki_luau_is_function(state, index) != 0;
+}
+
+/// Pushes nil onto the stack.
+pub fn pushNil(state: *State) void {
+    c.yuki_luau_push_nil(state);
+}
+
+/// Pushes a number onto the stack.
+pub fn pushNumber(state: *State, value: f64) void {
+    c.yuki_luau_push_number(state, value);
+}
