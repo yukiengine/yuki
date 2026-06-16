@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const scripting = @import("mod.zig");
+const input = @import("../input/mod.zig");
 
 test "script host creates an empty Luau stack" {
     var host = try scripting.ScriptHost.init();
@@ -516,6 +517,163 @@ test "script host Vector2 rejects invalid arithmetic" {
         scripting.ScriptHostError.RuntimeFailed,
         module.callUpdate(&host, 0.016),
     );
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script context without input rejects input queries" {
+    const context = scripting.ScriptContext.empty();
+
+    try std.testing.expect(!context.hasInput());
+
+    try std.testing.expectError(
+        scripting.ScriptContextError.MissingInput,
+        context.requireInput(),
+    );
+
+    try std.testing.expectError(
+        scripting.ScriptContextError.MissingInput,
+        context.inputMap("gameplay"),
+    );
+
+    try std.testing.expectError(
+        scripting.ScriptContextError.MissingInput,
+        context.inputMapPressed("gameplay", "player.jump"),
+    );
+}
+
+test "script context reads named input actions" {
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addDigital("gameplay", "player.jump");
+    _ = try builder.addAxis1("gameplay", "player.look_x");
+    _ = try builder.addAxis2("gameplay", "player.move");
+
+    try builder.bindDigitalKeyName("gameplay", "player.jump", "space");
+    try builder.bindAxis1KeyNames("gameplay", "player.look_x", "q", "e");
+    try builder.bindAxis2KeyNames("gameplay", "player.move", "a", "d", "w", "s");
+    try builder.activateMap("gameplay");
+
+    var session = try builder.build();
+
+    try session.applyKey(.space, true, false);
+    try session.applyKey(.e, true, false);
+    try session.applyKey(.d, true, false);
+
+    const context = scripting.ScriptContext.fromInput(&session);
+
+    try std.testing.expect(context.hasInput());
+    try std.testing.expect(try context.inputMapActive("gameplay"));
+    try std.testing.expect(try context.inputMapCanProcess("gameplay"));
+    try std.testing.expect(try context.inputMapDown("gameplay", "player.jump"));
+    try std.testing.expect(try context.inputMapPressed("gameplay", "player.jump"));
+
+    const look_x = try context.inputMapAxis1("gameplay", "player.look_x");
+    try std.testing.expectEqual(@as(f32, 1.0), look_x);
+
+    const move = try context.inputMapAxis2("gameplay", "player.move");
+    try std.testing.expectEqual(@as(f32, 1.0), move.x);
+    try std.testing.expectEqual(@as(f32, 0.0), move.y);
+}
+
+test "script context reads pointer state through named input maps" {
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addDigital("gameplay", "pointer.select");
+
+    try builder.bindMouseButtonName("gameplay", "pointer.select", "left");
+    try builder.activateMap("gameplay");
+
+    var session = try builder.build();
+
+    session.applyMouseMotion(input.Vector2.xy(32.0, 64.0));
+    try session.applyMouseButton(.left, true, input.Vector2.xy(32.0, 64.0));
+    session.applyMouseWheel(
+        input.Vector2.xy(0.0, -1.0),
+        input.Vector2.xy(32.0, 64.0),
+    );
+
+    const context = scripting.ScriptContext.fromInput(&session);
+
+    const position = try context.inputMapMousePosition("gameplay");
+    try std.testing.expectEqual(@as(f32, 32.0), position.x);
+    try std.testing.expectEqual(@as(f32, 64.0), position.y);
+
+    const delta = try context.inputMapMouseDelta("gameplay");
+    try std.testing.expectEqual(@as(f32, 32.0), delta.x);
+    try std.testing.expectEqual(@as(f32, 64.0), delta.y);
+
+    const wheel = try context.inputMapMouseWheel("gameplay");
+    try std.testing.expectEqual(@as(f32, 0.0), wheel.x);
+    try std.testing.expectEqual(@as(f32, -1.0), wheel.y);
+
+    try std.testing.expect(try context.inputMapMouseInsideSurface("gameplay"));
+    try std.testing.expect(try context.inputMapMouseButtonDown("gameplay", .left));
+    try std.testing.expect(try context.inputMapMouseButtonPressed("gameplay", .left));
+    try std.testing.expect(!try context.inputMapMouseButtonReleased("gameplay", .left));
+}
+
+test "script context forwards unknown input names" {
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addDigital("gameplay", "player.jump");
+
+    try builder.bindDigitalKeyName("gameplay", "player.jump", "space");
+    try builder.activateMap("gameplay");
+
+    var session = try builder.build();
+    const context = scripting.ScriptContext.fromInput(&session);
+
+    try std.testing.expectError(
+        input.Error.UnknownActionMap,
+        context.inputMap("missing"),
+    );
+
+    try std.testing.expectError(
+        input.Error.UnknownActionName,
+        context.inputMapPressed("gameplay", "player.missing"),
+    );
+}
+
+test "script module accepts explicit context for lifecycle calls" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.init(ctx)
+        \\    if ctx == nil then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\end
+        \\
+        \\function script.update(ctx, dt)
+        \\    if ctx == nil then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\
+        \\    if dt <= 0 then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\end
+        \\
+        \\return script
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "explicit_context_lifecycle");
+    defer module.deinit(&host);
+
+    const context = scripting.ScriptContext.empty();
+
+    try module.callInitWithContext(&host, context);
+    try module.callUpdateWithContext(&host, context, 0.016);
 
     try std.testing.expectEqual(@as(i32, 0), host.stackTop());
 }

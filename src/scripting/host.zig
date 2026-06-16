@@ -8,6 +8,9 @@
 //! that scripts might accidentally depend on.
 
 const luau = @import("../backend/luau.zig");
+const context_mod = @import("context.zig");
+
+const ScriptContext = context_mod.ScriptContext;
 
 const invalid_ref: i32 = -1;
 
@@ -47,14 +50,33 @@ pub const ScriptModule = struct {
         return self.table_ref;
     }
 
-    /// Calls init(ctx) when the module defines it.
+    /// Calls init(ctx) with an empty runtime context when the module defines it.
     pub fn callInit(self: *const ScriptModule, host: *ScriptHost) Error!void {
-        try host.callLifecycleWithContextOnly(self.init_ref);
+        try self.callInitWithContext(host, ScriptContext.empty());
     }
 
-    /// Calls update(ctx, dt) when the module defines it.
+    /// Calls init(ctx) with an explicit runtime context.
+    pub fn callInitWithContext(
+        self: *const ScriptModule,
+        host: *ScriptHost,
+        context: ScriptContext,
+    ) Error!void {
+        try host.callLifecycleWithContextOnly(self.init_ref, context);
+    }
+
+    /// Calls update(ctx, dt) with an empty runtime context when the module defines it.
     pub fn callUpdate(self: *const ScriptModule, host: *ScriptHost, dt: f64) Error!void {
-        try host.callLifecycleWithDelta(self.update_ref, dt);
+        try self.callUpdateWithContext(host, ScriptContext.empty(), dt);
+    }
+
+    /// Calls update(ctx, dt) with an explicit runtime context.
+    pub fn callUpdateWithContext(
+        self: *const ScriptModule,
+        host: *ScriptHost,
+        context: ScriptContext,
+        dt: f64,
+    ) Error!void {
+        try host.callLifecycleWithDelta(self.update_ref, context, dt);
     }
 
     /// Releases module table and lifecycle registry references.
@@ -158,7 +180,11 @@ pub const ScriptHost = struct {
         return function_ref;
     }
 
-    fn callLifecycleWithContextOnly(self: *ScriptHost, function_ref: i32) Error!void {
+    fn callLifecycleWithContextOnly(
+        self: *ScriptHost,
+        function_ref: i32,
+        context: ScriptContext,
+    ) Error!void {
         if (function_ref < 0) {
             return;
         }
@@ -172,13 +198,18 @@ pub const ScriptHost = struct {
             return Error.ScriptLifecycleNotFunction;
         }
 
-        self.pushCallbackContext();
+        self.pushCallbackContext(context);
         try luau.call(self.state, 1, 0);
 
         self.restoreStack(initial_top);
     }
 
-    fn callLifecycleWithDelta(self: *ScriptHost, function_ref: i32, dt: f64) Error!void {
+    fn callLifecycleWithDelta(
+        self: *ScriptHost,
+        function_ref: i32,
+        context: ScriptContext,
+        dt: f64,
+    ) Error!void {
         if (function_ref < 0) {
             return;
         }
@@ -192,14 +223,18 @@ pub const ScriptHost = struct {
             return Error.ScriptLifecycleNotFunction;
         }
 
-        self.pushCallbackContext();
+        self.pushCallbackContext(context);
         luau.pushNumber(self.state, dt);
         try luau.call(self.state, 2, 0);
 
         self.restoreStack(initial_top);
     }
 
-    fn pushCallbackContext(self: *ScriptHost) void {
+    fn pushCallbackContext(self: *ScriptHost, context: ScriptContext) void {
+        // The Zig context is accepted now so the runtime call shape is stable.
+        // The Luau table remains empty until the next slice binds `ctx.input`.
+        _ = context;
+
         luau.createTable(self.state, 0, 0);
         luau.setReadonly(self.state, -1, true);
     }
