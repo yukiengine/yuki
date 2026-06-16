@@ -115,6 +115,61 @@ extern "C" void yuki_luau_set_readonly(lua_State *state, int index,
   lua_setreadonly(state, index, enabled);
 }
 
+extern "C" int yuki_luau_raise_error(lua_State *state, const char *message) {
+  lua_pushstring(state, message ? message : "Luau runtime error");
+  lua_error(state);
+  return 0;
+}
+
+extern "C" int yuki_luau_read_string(lua_State *state, int index,
+                                     const char **out_data, size_t *out_size) {
+  if (!out_data || !out_size)
+    return 0;
+
+  if (lua_type(state, index) != LUA_TSTRING)
+    return 0;
+
+  size_t size = 0;
+  const char *data = lua_tolstring(state, index, &size);
+
+  if (!data)
+    return 0;
+
+  *out_data = data;
+  *out_size = size;
+  return 1;
+}
+
+extern "C" void yuki_luau_push_string(lua_State *state, const char *data,
+                                      size_t size) {
+  lua_pushlstring(state, data, size);
+}
+
+extern "C" void yuki_luau_push_boolean(lua_State *state, int value) {
+  lua_pushboolean(state, value);
+}
+
+extern "C" void yuki_luau_push_light_userdata(lua_State *state, void *data) {
+  lua_pushlightuserdata(state, data);
+}
+
+extern "C" void *yuki_luau_to_light_userdata_upvalue(lua_State *state,
+                                                     int upvalue_index) {
+  return lua_touserdata(state, lua_upvalueindex(upvalue_index));
+}
+
+extern "C" void yuki_luau_push_c_closure(lua_State *state,
+                                         YukiLuauCFunction function,
+                                         const char *debug_name,
+                                         int upvalue_count) {
+  lua_pushcclosure(state, (lua_CFunction)function, debug_name, upvalue_count);
+}
+
+extern "C" void yuki_luau_set_field(lua_State *state, int table_index,
+                                    const char *field_name) {
+  lua_setfield(state, table_index, field_name);
+}
+
 struct YukiBridgeVector2 {
   double x;
   double y;
@@ -344,4 +399,9 @@ extern "C" void yuki_luau_install_vector2(lua_State *state) {
 
   lua_setreadonly(state, api_index, 1);
   lua_setglobal(state, "Vector2");
+}
+
+extern "C" void yuki_luau_push_vector2_value(lua_State *state, double x,
+                                             double y) {
+  yuki_luau_push_vector2(state, x, y);
 }

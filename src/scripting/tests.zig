@@ -677,3 +677,254 @@ test "script module accepts explicit context for lifecycle calls" {
 
     try std.testing.expectEqual(@as(i32, 0), host.stackTop());
 }
+
+test "script host exposes ctx input axis2 to update" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.update(ctx, dt)
+        \\    local gameplay = ctx.input:map("gameplay")
+        \\    local move = gameplay:axis2("player.move")
+        \\
+        \\    if move.x ~= 1 or move.y ~= 0 then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\end
+        \\
+        \\return script
+    ;
+
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addAxis2("gameplay", "player.move");
+
+    try builder.bindAxis2KeyNames("gameplay", "player.move", "a", "d", "w", "s");
+    try builder.activateMap("gameplay");
+
+    var session = try builder.build();
+    try session.applyKey(.d, true, false);
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "ctx_input_axis2");
+    defer module.deinit(&host);
+
+    const context = scripting.ScriptContext.fromInput(&session);
+    try module.callUpdateWithContext(&host, context, 0.016);
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host exposes ctx input digital actions" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.update(ctx, dt)
+        \\    local gameplay = ctx.input:map("gameplay")
+        \\
+        \\    if not gameplay:down("player.jump") then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\
+        \\    if not gameplay:pressed("player.jump") then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\
+        \\    if gameplay:released("player.jump") then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\end
+        \\
+        \\return script
+    ;
+
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addDigital("gameplay", "player.jump");
+
+    try builder.bindDigitalKeyName("gameplay", "player.jump", "space");
+    try builder.activateMap("gameplay");
+
+    var session = try builder.build();
+    try session.applyKey(.space, true, false);
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "ctx_input_digital");
+    defer module.deinit(&host);
+
+    const context = scripting.ScriptContext.fromInput(&session);
+    try module.callUpdateWithContext(&host, context, 0.016);
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host allows cached input map handles across callbacks" {
+    const source =
+        \\local script = {}
+        \\local gameplay = nil
+        \\
+        \\function script.init(ctx)
+        \\    gameplay = ctx.input:map("gameplay")
+        \\end
+        \\
+        \\function script.update(ctx, dt)
+        \\    local move = gameplay:axis2("player.move")
+        \\
+        \\    if move.x ~= 1 or move.y ~= 0 then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\end
+        \\
+        \\return script
+    ;
+
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addAxis2("gameplay", "player.move");
+
+    try builder.bindAxis2KeyNames("gameplay", "player.move", "a", "d", "w", "s");
+    try builder.activateMap("gameplay");
+
+    var session = try builder.build();
+    try session.applyKey(.d, true, false);
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "ctx_input_cached_map");
+    defer module.deinit(&host);
+
+    const context = scripting.ScriptContext.fromInput(&session);
+    try module.callInitWithContext(&host, context);
+    try module.callUpdateWithContext(&host, context, 0.016);
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host exposes ctx input pointer vectors" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.update(ctx, dt)
+        \\    local gameplay = ctx.input:map("gameplay")
+        \\    local position = gameplay:mousePosition()
+        \\    local delta = gameplay:mouseDelta()
+        \\    local wheel = gameplay:mouseWheel()
+        \\
+        \\    if position.x ~= 32 or position.y ~= 64 then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\
+        \\    if delta.x ~= 32 or delta.y ~= 64 then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\
+        \\    if wheel.x ~= 0 or wheel.y ~= -1 then
+        \\        local bad = nil
+        \\        bad()
+        \\    end
+        \\end
+        \\
+        \\return script
+    ;
+
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    try builder.activateMap("gameplay");
+
+    var session = try builder.build();
+
+    session.applyMouseMotion(input.Vector2.xy(32.0, 64.0));
+    session.applyMouseWheel(
+        input.Vector2.xy(0.0, -1.0),
+        input.Vector2.xy(32.0, 64.0),
+    );
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "ctx_input_pointer");
+    defer module.deinit(&host);
+
+    const context = scripting.ScriptContext.fromInput(&session);
+    try module.callUpdateWithContext(&host, context, 0.016);
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host reports ctx input errors as runtime failures" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.update(ctx, dt)
+        \\    local gameplay = ctx.input:map("gameplay")
+        \\    gameplay:pressed("player.missing")
+        \\end
+        \\
+        \\return script
+    ;
+
+    var builder = input.InputSessionBuilder.init();
+
+    _ = try builder.addMap("gameplay");
+    _ = try builder.addDigital("gameplay", "player.jump");
+
+    try builder.bindDigitalKeyName("gameplay", "player.jump", "space");
+    try builder.activateMap("gameplay");
+
+    const session = try builder.build();
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "ctx_input_bad_action");
+    defer module.deinit(&host);
+
+    const context = scripting.ScriptContext.fromInput(&session);
+
+    try std.testing.expectError(
+        scripting.ScriptHostError.RuntimeFailed,
+        module.callUpdateWithContext(&host, context, 0.016),
+    );
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host leaves ctx input absent without input context" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.update(ctx, dt)
+        \\    ctx.input:map("gameplay")
+        \\end
+        \\
+        \\return script
+    ;
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "ctx_input_absent");
+    defer module.deinit(&host);
+
+    try std.testing.expectError(
+        scripting.ScriptHostError.RuntimeFailed,
+        module.callUpdate(&host, 0.016),
+    );
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}

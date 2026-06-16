@@ -162,3 +162,63 @@ pub fn setReadonly(state: *State, index: i32, enabled: bool) void {
 pub fn installVector2(state: *State) void {
     c.yuki_luau_install_vector2(state);
 }
+
+/// C callback shape used by Luau functions implemented in Zig.
+pub const CFunction = c.YukiLuauCFunction;
+
+/// Raises a Luau runtime error from a bridge-backed callback.
+pub fn raiseError(state: *State, message: [:0]const u8) c_int {
+    return c.yuki_luau_raise_error(state, message.ptr);
+}
+
+/// Reads a string stack value as borrowed bytes.
+pub fn readString(state: *State, index: i32) ?[]const u8 {
+    var data: [*c]const u8 = null;
+    var size: usize = 0;
+
+    if (c.yuki_luau_read_string(state, index, &data, &size) == 0) {
+        return null;
+    }
+
+    return data[0..size];
+}
+
+/// Pushes a string value onto the Luau stack.
+pub fn pushString(state: *State, value: []const u8) void {
+    c.yuki_luau_push_string(state, value.ptr, value.len);
+}
+
+/// Pushes a boolean value onto the Luau stack.
+pub fn pushBoolean(state: *State, value: bool) void {
+    c.yuki_luau_push_boolean(state, if (value) 1 else 0);
+}
+
+/// Pushes light userdata for callback upvalues.
+pub fn pushLightUserdata(state: *State, data: *anyopaque) void {
+    c.yuki_luau_push_light_userdata(state, data);
+}
+
+/// Reads a light userdata callback upvalue.
+pub fn toLightUserdataUpvalue(state: *State, upvalue_index: i32) ?*anyopaque {
+    return c.yuki_luau_to_light_userdata_upvalue(state, upvalue_index);
+}
+
+/// Pushes a C closure using values already pushed as upvalues.
+pub fn pushCClosure(
+    state: *State,
+    function: CFunction,
+    debug_name: [:0]const u8,
+    upvalue_count: i32,
+) void {
+    c.yuki_luau_push_c_closure(state, function, debug_name.ptr, upvalue_count);
+}
+
+/// Stores the current top stack value into table[field_name].
+pub fn setField(state: *State, table_index: i32, field_name: [:0]const u8) void {
+    c.yuki_luau_set_field(state, table_index, field_name.ptr);
+}
+
+/// Pushes an immutable Vector2 value.
+pub fn pushVector2(state: *State, x: f64, y: f64) void {
+    c.yuki_luau_push_vector2_value(state, x, y);
+}

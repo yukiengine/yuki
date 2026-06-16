@@ -9,6 +9,7 @@
 
 const luau = @import("../backend/luau.zig");
 const context_mod = @import("context.zig");
+const input_api = @import("input_api.zig");
 
 const ScriptContext = context_mod.ScriptContext;
 
@@ -94,6 +95,7 @@ pub const ScriptModule = struct {
 /// Owns one Luau VM state for the runtime.
 pub const ScriptHost = struct {
     state: *luau.State,
+    callback_runtime: input_api.CallbackRuntime,
 
     /// Creates a Luau VM state owned by this host.
     pub fn init() Error!ScriptHost {
@@ -103,6 +105,7 @@ pub const ScriptHost = struct {
 
         return .{
             .state = state,
+            .callback_runtime = .{},
         };
     }
 
@@ -198,6 +201,9 @@ pub const ScriptHost = struct {
             return Error.ScriptLifecycleNotFunction;
         }
 
+        self.callback_runtime.begin(context);
+        defer self.callback_runtime.end();
+
         self.pushCallbackContext(context);
         try luau.call(self.state, 1, 0);
 
@@ -223,6 +229,9 @@ pub const ScriptHost = struct {
             return Error.ScriptLifecycleNotFunction;
         }
 
+        self.callback_runtime.begin(context);
+        defer self.callback_runtime.end();
+
         self.pushCallbackContext(context);
         luau.pushNumber(self.state, dt);
         try luau.call(self.state, 2, 0);
@@ -231,12 +240,16 @@ pub const ScriptHost = struct {
     }
 
     fn pushCallbackContext(self: *ScriptHost, context: ScriptContext) void {
-        // The Zig context is accepted now so the runtime call shape is stable.
-        // The Luau table remains empty until the next slice binds `ctx.input`.
-        _ = context;
+        luau.createTable(self.state, 0, if (context.hasInput()) 1 else 0);
 
-        luau.createTable(self.state, 0, 0);
-        luau.setReadonly(self.state, -1, true);
+        const context_index = self.stackTop();
+
+        if (context.hasInput()) {
+            input_api.pushInputApi(self.state, &self.callback_runtime);
+            luau.setField(self.state, context_index, "input");
+        }
+
+        luau.setReadonly(self.state, context_index, true);
     }
 
     fn releaseRegistryRef(self: *ScriptHost, registry_ref: i32) void {

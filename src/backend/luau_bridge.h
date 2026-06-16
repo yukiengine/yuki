@@ -8,6 +8,39 @@ extern "C" {
 
 typedef struct lua_State lua_State;
 
+/* C callback shape used by Luau functions implemented in Zig. */
+typedef int (*YukiLuauCFunction)(lua_State *state);
+
+/* Raises a Luau runtime error from bridge-backed callbacks. */
+int yuki_luau_raise_error(lua_State *state, const char *message);
+
+/* Reads a string stack value without requiring null termination. */
+int yuki_luau_read_string(lua_State *state, int index, const char **out_data,
+                          size_t *out_size);
+
+/* Pushes a string stack value from bytes owned by Zig. */
+void yuki_luau_push_string(lua_State *state, const char *data, size_t size);
+
+/* Pushes a boolean stack value. */
+void yuki_luau_push_boolean(lua_State *state, int value);
+
+/* Pushes light userdata for callback upvalues. */
+void yuki_luau_push_light_userdata(lua_State *state, void *data);
+
+/* Reads a light userdata callback upvalue by 1-based upvalue index. */
+void *yuki_luau_to_light_userdata_upvalue(lua_State *state, int upvalue_index);
+
+/* Pushes a C closure using values already pushed as upvalues. */
+void yuki_luau_push_c_closure(lua_State *state, YukiLuauCFunction function,
+                              const char *debug_name, int upvalue_count);
+
+/* Stores the current top stack value into table[field_name]. */
+void yuki_luau_set_field(lua_State *state, int table_index,
+                         const char *field_name);
+
+/* Pushes a Vector2 value using Yuki's immutable Vector2 table shape. */
+void yuki_luau_push_vector2_value(lua_State *state, double x, double y);
+
 /*
  * Small owned bytecode buffer returned by the Luau compiler.
  *
