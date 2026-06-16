@@ -1140,3 +1140,163 @@ test "script context reports missing world access" {
         context.worldRequireActor("player"),
     );
 }
+
+test "script host exposes ctx world actor position to Luau" {
+    const source =
+        \\local script = {}
+        \\local player = nil
+        \\
+        \\function script.init(ctx)
+        \\    player = ctx.world:requireActor("player")
+        \\
+        \\    if player.position.x ~= 4 then
+        \\        error("bad player x")
+        \\    end
+        \\
+        \\    if player.position.y ~= 8 then
+        \\        error("bad player y")
+        \\    end
+        \\
+        \\    player.position = player.position + Vector2.new(1, 2)
+        \\end
+        \\
+        \\function script.update(ctx, dt)
+        \\    player:moveBy(Vector2.new(3, -1))
+        \\    player:setPosition(player.position + Vector2.new(2, 1))
+        \\end
+        \\
+        \\return script
+    ;
+
+    var scene = scene2d.Scene.init();
+
+    const player = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(4.0, 8.0),
+    });
+
+    var script_world = scripting.ScriptWorld.init(&scene);
+    try script_world.bindActor("player", player);
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "world_actor_position");
+    defer module.deinit(&host);
+
+    const context = scripting.ScriptContext.empty().withWorld(&script_world);
+
+    try module.callInitWithContext(&host, context);
+
+    var actor = scene.actorConst(player).?;
+    try std.testing.expectEqual(@as(f32, 5.0), actor.position.x);
+    try std.testing.expectEqual(@as(f32, 10.0), actor.position.y);
+
+    try module.callUpdateWithContext(&host, context, 0.016);
+
+    actor = scene.actorConst(player).?;
+    try std.testing.expectEqual(@as(f32, 10.0), actor.position.x);
+    try std.testing.expectEqual(@as(f32, 10.0), actor.position.y);
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host ctx world actor returns nil for missing actor" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.init(ctx)
+        \\    if ctx.world:actor("missing") ~= nil then
+        \\        error("missing actor should be nil")
+        \\    end
+        \\end
+        \\
+        \\return script
+    ;
+
+    var scene = scene2d.Scene.init();
+    var script_world = scripting.ScriptWorld.init(&scene);
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "world_actor_nil");
+    defer module.deinit(&host);
+
+    const context = scripting.ScriptContext.empty().withWorld(&script_world);
+
+    try module.callInitWithContext(&host, context);
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host ctx world require actor errors when missing" {
+    const source =
+        \\local script = {}
+        \\
+        \\function script.init(ctx)
+        \\    ctx.world:requireActor("missing")
+        \\end
+        \\
+        \\return script
+    ;
+
+    var scene = scene2d.Scene.init();
+    var script_world = scripting.ScriptWorld.init(&scene);
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "world_require_missing");
+    defer module.deinit(&host);
+
+    const context = scripting.ScriptContext.empty().withWorld(&script_world);
+
+    try std.testing.expectError(
+        scripting.ScriptHostError.RuntimeFailed,
+        module.callInitWithContext(&host, context),
+    );
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}
+
+test "script host ctx world actor handle detects stale actor" {
+    const source =
+        \\local script = {}
+        \\local player = nil
+        \\
+        \\function script.init(ctx)
+        \\    player = ctx.world:requireActor("player")
+        \\end
+        \\
+        \\function script.update(ctx, dt)
+        \\    local position = player.position
+        \\end
+        \\
+        \\return script
+    ;
+
+    var scene = scene2d.Scene.init();
+
+    const player = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(1.0, 2.0),
+    });
+
+    var script_world = scripting.ScriptWorld.init(&scene);
+    try script_world.bindActor("player", player);
+
+    var host = try scripting.ScriptHost.init();
+    defer host.deinit();
+
+    var module = try host.loadModuleFromSource(source, "world_stale_actor");
+    defer module.deinit(&host);
+
+    const context = scripting.ScriptContext.empty().withWorld(&script_world);
+
+    try module.callInitWithContext(&host, context);
+    scene.world.despawn(player);
+
+    try std.testing.expectError(
+        scripting.ScriptHostError.RuntimeFailed,
+        module.callUpdateWithContext(&host, context, 0.016),
+    );
+
+    try std.testing.expectEqual(@as(i32, 0), host.stackTop());
+}

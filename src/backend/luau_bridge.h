@@ -126,6 +126,28 @@ void yuki_luau_set_readonly(lua_State *state, int index, int enabled);
 /* Installs Yuki's immutable Vector2 API into the Luau global table. */
 void yuki_luau_install_vector2(lua_State *state);
 
+/* Plain Vector2 payload used when Zig reads Luau Vector2 tables. */
+typedef struct YukiLuauVector2 {
+  double x;
+  double y;
+} YukiLuauVector2;
+
+/* Reads a Yuki Vector2-like table from the stack. */
+int yuki_luau_read_vector2_value(lua_State *state, int index,
+                                 YukiLuauVector2 *out);
+
+/* Allocates full userdata for opaque script-facing handles. */
+void *yuki_luau_new_userdata(lua_State *state, size_t size);
+
+/* Reads full userdata at a stack index. */
+void *yuki_luau_to_userdata(lua_State *state, int index);
+
+/* Pops a metatable and assigns it to the stack value at index. */
+void yuki_luau_set_metatable(lua_State *state, int index);
+
+/* Copies a stack value onto the top of the stack. */
+void yuki_luau_push_value(lua_State *state, int index);
+
 #ifdef __cplusplus
 }
 #endif

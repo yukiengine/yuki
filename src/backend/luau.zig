@@ -222,3 +222,39 @@ pub fn setField(state: *State, table_index: i32, field_name: [:0]const u8) void 
 pub fn pushVector2(state: *State, x: f64, y: f64) void {
     c.yuki_luau_push_vector2_value(state, x, y);
 }
+
+/// Plain Vector2 payload read from Luau.
+pub const Vector2Value = c.YukiLuauVector2;
+
+/// Reads a Luau Vector2 value from the stack.
+pub fn readVector2Value(state: *State, index: i32) ?Vector2Value {
+    var value: Vector2Value = undefined;
+
+    if (c.yuki_luau_read_vector2_value(state, index, &value) == 0) {
+        return null;
+    }
+
+    return value;
+}
+
+/// Allocates userdata and returns it as a typed pointer.
+pub fn newUserdata(state: *State, comptime T: type) *T {
+    const raw = c.yuki_luau_new_userdata(state, @sizeOf(T)) orelse unreachable;
+    return @ptrCast(@alignCast(raw));
+}
+
+/// Reads userdata as a typed pointer.
+pub fn toUserdata(state: *State, comptime T: type, index: i32) ?*T {
+    const raw = c.yuki_luau_to_userdata(state, index) orelse return null;
+    return @ptrCast(@alignCast(raw));
+}
+
+/// Pops the top metatable and assigns it to a stack value.
+pub fn setMetatable(state: *State, index: i32) void {
+    c.yuki_luau_set_metatable(state, index);
+}
+
+/// Copies one stack value onto the stack top.
+pub fn pushValue(state: *State, index: i32) void {
+    c.yuki_luau_push_value(state, index);
+}

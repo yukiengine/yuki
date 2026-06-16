@@ -10,6 +10,7 @@
 const luau = @import("../backend/luau.zig");
 const context_mod = @import("context.zig");
 const input_api = @import("input_api.zig");
+const world_api = @import("world_api.zig");
 
 const ScriptContext = context_mod.ScriptContext;
 
@@ -240,13 +241,23 @@ pub const ScriptHost = struct {
     }
 
     fn pushCallbackContext(self: *ScriptHost, context: ScriptContext) void {
-        luau.createTable(self.state, 0, if (context.hasInput()) 1 else 0);
+        var field_count: i32 = 0;
+
+        if (context.hasInput()) field_count += 1;
+        if (context.hasWorld()) field_count += 1;
+
+        luau.createTable(self.state, 0, field_count);
 
         const context_index = self.stackTop();
 
         if (context.hasInput()) {
             input_api.pushInputApi(self.state, &self.callback_runtime);
             luau.setField(self.state, context_index, "input");
+        }
+
+        if (context.hasWorld()) {
+            world_api.pushWorldApi(self.state, &self.callback_runtime);
+            luau.setField(self.state, context_index, "world");
         }
 
         luau.setReadonly(self.state, context_index, true);

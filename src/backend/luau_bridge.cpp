@@ -170,6 +170,22 @@ extern "C" void yuki_luau_set_field(lua_State *state, int table_index,
   lua_setfield(state, table_index, field_name);
 }
 
+extern "C" void *yuki_luau_new_userdata(lua_State *state, size_t size) {
+  return lua_newuserdata(state, size);
+}
+
+extern "C" void *yuki_luau_to_userdata(lua_State *state, int index) {
+  return lua_touserdata(state, index);
+}
+
+extern "C" void yuki_luau_set_metatable(lua_State *state, int index) {
+  lua_setmetatable(state, index);
+}
+
+extern "C" void yuki_luau_push_value(lua_State *state, int index) {
+  lua_pushvalue(state, index);
+}
+
 struct YukiBridgeVector2 {
   double x;
   double y;
@@ -216,6 +232,21 @@ static bool yuki_luau_read_vector2(lua_State *state, int index,
   out->x = x;
   out->y = y;
   return true;
+}
+
+extern "C" int yuki_luau_read_vector2_value(lua_State *state, int index,
+                                            YukiLuauVector2 *out) {
+  if (!out)
+    return 0;
+
+  YukiBridgeVector2 value = {};
+
+  if (!yuki_luau_read_vector2(state, index, &value))
+    return 0;
+
+  out->x = value.x;
+  out->y = value.y;
+  return 1;
 }
 
 static void yuki_luau_set_number_field(lua_State *state, int table_index,
