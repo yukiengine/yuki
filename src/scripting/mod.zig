@@ -8,5 +8,8 @@ const host_mod = @import("host.zig");
 /// Runtime owner for one Luau VM.
 pub const ScriptHost = host_mod.ScriptHost;
 
-/// Script host construction errors.
+/// Loaded script module table pinned in the Luau registry.
+pub const ScriptModule = host_mod.ScriptModule;
+
+/// Script host construction and loading errors.
 pub const ScriptHostError = host_mod.Error;

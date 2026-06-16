@@ -69,31 +69,38 @@
                   install -Dm755 -t $out/bin luau-analyze
                   install -Dm755 -t $out/bin luau-compile
 
-                  if [ -f libLuau.VM.a ]; then
-                    install -Dm644 libLuau.VM.a $out/lib/libLuau.VM.a
-                  fi
+                  # if [ -f libLuau.VM.a ]; then
+                  #   install -Dm644 libLuau.VM.a $out/lib/libLuau.VM.a
+                  # fi
+                  #
+                  # if [ -f libLuau.Compiler.a ]; then
+                  #   install -Dm644 libLuau.Compiler.a $out/lib/libLuau.Compiler.a
+                  # fi
+                  #
+                  # if [ -f libLuau.Ast.a ]; then
+                  #   install -Dm644 libLuau.Ast.a $out/lib/libLuau.Ast.a
+                  # fi
+                  #
+                  # if [ -f libLuau.Config.a ]; then
+                  #   install -Dm644 libLuau.Config.a $out/lib/libLuau.Config.a
+                  # fi
 
-                  if [ -f libLuau.Compiler.a ]; then
-                    install -Dm644 libLuau.Compiler.a $out/lib/libLuau.Compiler.a
-                  fi
-
-                  if [ -f libLuau.Ast.a ]; then
-                    install -Dm644 libLuau.Ast.a $out/lib/libLuau.Ast.a
-                  fi
-
-                  if [ -f libLuau.Config.a ]; then
-                    install -Dm644 libLuau.Config.a $out/lib/libLuau.Config.a
-                  fi
+                  for archive in libLuau*.a; do
+                    if [ -f "$archive" ]; then
+                      install -Dm644 "$archive" "$out/lib/$archive"
+                    fi
+                  done
 
                   copy_headers() {
                     cp -R "$1"/. $out/include/
                     chmod -R u+w $out/include
                   }
 
-                  copy_headers ${old.src}/Common/include
-                  copy_headers ${old.src}/Ast/include
-                  copy_headers ${old.src}/Compiler/include
-                  copy_headers ${old.src}/VM/include
+                  for include_dir in Common Ast Bytecode Compiler Config Analysis CodeGen VM Require; do
+                    if [ -d "${old.src}/$include_dir/include" ]; then
+                      copy_headers "${old.src}/$include_dir/include"
+                    fi
+                  done
 
                   chmod -R a+rX $out/include
 
@@ -103,7 +110,12 @@
             else
               throw "This nixpkgs revision does not provide luau";
 
-          luauCxxLib = if isDarwin then "-lc++" else "-lstdc++";
+          cxxRuntimeLib = lib.getLib pkgs.stdenv.cc.cc;
+
+          # Zig's normal build path still needs the exact libstdc++.so after
+          # Luau's static archives; -lstdc++ alone leaves C++ symbols unresolved.
+          luauCxxLib =
+            if isDarwin then "-lc++" else "-L${cxxRuntimeLib}/lib -Wl,-rpath,${cxxRuntimeLib}/lib -lstdc++";
 
           # Local pkg-config shim so build.zig can link Luau like SDL3/wgpu-native.
           luauPkgConfig = pkgs.writeTextDir "lib/pkgconfig/luau.pc" ''
@@ -115,7 +127,7 @@
             Description: Luau VM libraries for Yuki scripting
             Version: ${pkgs.luau.version}
             Cflags: -I${luauNative}/include
-            Libs: -L${luauNative}/lib -Wl,-rpath,${luauNative}/lib -lLuau.VM ${luauCxxLib}
+            Libs: -L${luauNative}/lib -Wl,-rpath,${luauNative}/lib -Wl,--start-group -lLuau.Compiler -lLuau.Bytecode -lLuau.Ast -lLuau.VM -lLuau.Common -Wl,--end-group ${luauCxxLib}
           '';
 
           luauPackages = [
@@ -244,6 +256,7 @@
                 export YUKI_LINK_MODE="static"
                 export YUKI_RENDER_BACKEND="wgpu-native"
                 export YUKI_PLATFORM_BACKEND="sdl3"
+                export YUKI_STDCXX_LIB="${cxxRuntimeLib}/lib/libstdc++.so"
 
                 export PKG_CONFIG_PATH="${wgpuNativePkgConfig}/lib/pkgconfig:${luauPkgConfig}/lib/pkgconfig:$PKG_CONFIG_PATH"
 

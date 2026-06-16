@@ -66,22 +66,31 @@ pub fn build(b: *std.Build) void {
     const run_all_tests = b.addRunArtifact(all_tests);
     test_step.dependOn(&run_all_tests.step);
 
-    linkNativeRuntime(mod);
+    linkNativeRuntime(b, mod);
     addLuauBridge(b, mod);
 
-    linkNativeRuntime(exe.root_module);
+    linkNativeRuntime(b, exe.root_module);
 
-    linkNativeRuntime(all_tests.root_module);
+    linkNativeRuntime(b, all_tests.root_module);
     addLuauBridge(b, all_tests.root_module);
 }
 
-fn linkNativeRuntime(module: *std.Build.Module) void {
+/// Links Yuki's native runtime dependencies into a build module.
+fn linkNativeRuntime(b: *std.Build, module: *std.Build.Module) void {
     module.link_libc = true;
-    module.link_libcpp = true;
 
     module.linkSystemLibrary("SDL3", .{ .use_pkg_config = .force });
     module.linkSystemLibrary("wgpu_native", .{ .use_pkg_config = .force });
     module.linkSystemLibrary("luau", .{ .use_pkg_config = .force });
+
+    addCxxRuntimeObject(b, module);
+}
+
+/// Adds libstdc++.so as a positional object after Luau's static archives.
+fn addCxxRuntimeObject(b: *std.Build, module: *std.Build.Module) void {
+    if (b.graph.environ_map.get("YUKI_STDCXX_LIB")) |path| {
+        module.addObjectFile(.{ .cwd_relative = path });
+    }
 }
 
 fn addLuauBridge(b: *std.Build, module: *std.Build.Module) void {
