@@ -35,3 +35,9 @@ pub const ScriptActor = world_mod.ScriptActor;
 
 /// Script world lookup and mutation errors.
 pub const ScriptWorldError = world_mod.Error;
+
+// callbacks.zig
+const callbacks_mod = @import("callbacks.zig");
+
+/// Host-owned state borrowed by Luau callback closures.
+pub const CallbackRuntime = callbacks_mod.Runtime;

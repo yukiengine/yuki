@@ -1300,3 +1300,42 @@ test "script host ctx world actor handle detects stale actor" {
 
     try std.testing.expectEqual(@as(i32, 0), host.stackTop());
 }
+
+test "callback runtime starts inactive" {
+    var runtime = scripting.CallbackRuntime{};
+
+    try std.testing.expect(!runtime.isActive());
+    try std.testing.expect(runtime.activeContext() == null);
+}
+
+test "callback runtime exposes active context only inside callback" {
+    var scene = scene2d.Scene.init();
+
+    const player = try scene.world.spawn(.{
+        .position = render2d.Vector2.xy(1.0, 2.0),
+    });
+
+    var script_world = scripting.ScriptWorld.init(&scene);
+    try script_world.bindActor("player", player);
+
+    const context = scripting.ScriptContext.empty().withWorld(&script_world);
+
+    var runtime = scripting.CallbackRuntime{};
+    runtime.begin(context);
+
+    try std.testing.expect(runtime.isActive());
+
+    const active = runtime.activeContext().?;
+    try std.testing.expect(active.hasWorld());
+
+    const actor = try active.worldRequireActor("player");
+    const position = try active.worldActorPosition(actor);
+
+    try std.testing.expectEqual(@as(f32, 1.0), position.x);
+    try std.testing.expectEqual(@as(f32, 2.0), position.y);
+
+    runtime.end();
+
+    try std.testing.expect(!runtime.isActive());
+    try std.testing.expect(runtime.activeContext() == null);
+}

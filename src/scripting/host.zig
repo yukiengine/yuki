@@ -11,6 +11,7 @@ const luau = @import("../backend/luau.zig");
 const context_mod = @import("context.zig");
 const input_api = @import("input_api.zig");
 const world_api = @import("world_api.zig");
+const callbacks = @import("callbacks.zig");
 
 const ScriptContext = context_mod.ScriptContext;
 
@@ -96,7 +97,7 @@ pub const ScriptModule = struct {
 /// Owns one Luau VM state for the runtime.
 pub const ScriptHost = struct {
     state: *luau.State,
-    callback_runtime: input_api.CallbackRuntime,
+    callback_runtime: callbacks.Runtime,
 
     /// Creates a Luau VM state owned by this host.
     pub fn init() Error!ScriptHost {

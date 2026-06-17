@@ -13,35 +13,12 @@
 
 const luau = @import("../backend/luau.zig");
 const context_mod = @import("context.zig");
+const callbacks = @import("callbacks.zig");
 
 const ScriptContext = context_mod.ScriptContext;
 
-/// Host-owned callback state borrowed by Luau C closures.
-pub const CallbackRuntime = struct {
-    active: bool = false,
-    context: ScriptContext = ScriptContext.empty(),
-
-    /// Marks a script callback as active and stores its frame context.
-    pub fn begin(self: *CallbackRuntime, context: ScriptContext) void {
-        self.context = context;
-        self.active = true;
-    }
-
-    /// Clears the active callback context after Luau returns.
-    pub fn end(self: *CallbackRuntime) void {
-        self.active = false;
-        self.context = ScriptContext.empty();
-    }
-
-    /// Returns the active context when a Luau callback is running.
-    pub fn activeContext(self: *const CallbackRuntime) ?ScriptContext {
-        if (!self.active) return null;
-        return self.context;
-    }
-};
-
 /// Pushes the readonly `ctx.input` API table.
-pub fn pushInputApi(state: *luau.State, runtime: *CallbackRuntime) void {
+pub fn pushInputApi(state: *luau.State, runtime: *callbacks.Runtime) void {
     luau.createTable(state, 0, 1);
 
     const input_index = luau.stackTop(state);
@@ -58,7 +35,7 @@ pub fn pushInputApi(state: *luau.State, runtime: *CallbackRuntime) void {
     luau.setReadonly(state, input_index, true);
 }
 
-fn pushInputMap(state: *luau.State, runtime: *CallbackRuntime, map_name: []const u8) void {
+fn pushInputMap(state: *luau.State, runtime: *callbacks.Runtime, map_name: []const u8) void {
     luau.createTable(state, 0, 9);
 
     const map_index = luau.stackTop(state);
@@ -81,24 +58,39 @@ fn pushInputMap(state: *luau.State, runtime: *CallbackRuntime, map_name: []const
 fn setRuntimeCallbackField(
     state: *luau.State,
     table_index: i32,
-    runtime: *CallbackRuntime,
+    runtime: *callbacks.Runtime,
     field_name: [:0]const u8,
     callback: luau.CFunction,
     debug_name: [:0]const u8,
 ) void {
-    luau.pushLightUserdata(state, @ptrCast(runtime));
-    luau.pushCClosure(state, callback, debug_name, 1);
-    luau.setField(state, table_index, field_name);
+    callbacks.setRuntimeCallbackField(
+        state,
+        table_index,
+        runtime,
+        field_name,
+        callback,
+        debug_name,
+    );
 }
 
-fn runtimeFromUpvalue(state: *luau.State) ?*CallbackRuntime {
-    const raw = luau.toLightUserdataUpvalue(state, 1) orelse return null;
-    return @ptrCast(@alignCast(raw));
+fn runtimeFromUpvalue(state: *luau.State) ?*callbacks.Runtime {
+    return callbacks.runtimeFromUpvalue(state);
 }
 
-fn activeContextFromState(state: *luau.State) ?ScriptContext {
-    const runtime = runtimeFromUpvalue(state) orelse return null;
-    return runtime.activeContext();
+fn activeContextFromState(state: *luau.State) ?context_mod.ScriptContext {
+    return callbacks.activeContextFromState(state);
+}
+
+fn raise(state: *luau.State, message: [:0]const u8) c_int {
+    return callbacks.raise(state, message);
+}
+
+fn raiseContextError(state: *luau.State, err: context_mod.Error) c_int {
+    return callbacks.raiseContextError(state, .input, err);
+}
+
+fn unwrapState(state: ?*luau.State) *luau.State {
+    return callbacks.unwrapState(state);
 }
 
 fn readMapNameFromSelf(state: *luau.State) ?[]const u8 {
@@ -112,23 +104,6 @@ fn readMapNameFromSelf(state: *luau.State) ?[]const u8 {
 
 fn readActionName(state: *luau.State) ?[]const u8 {
     return luau.readString(state, 2);
-}
-
-fn raise(state: *luau.State, message: [:0]const u8) c_int {
-    return luau.raiseError(state, message);
-}
-
-fn raiseContextError(state: *luau.State, err: context_mod.Error) c_int {
-    return switch (err) {
-        error.MissingInput => raise(state, "input is unavailable during this script callback"),
-        error.UnknownActionMap => raise(state, "unknown input map"),
-        error.UnknownActionName => raise(state, "unknown input action"),
-        else => raise(state, "input query failed"),
-    };
-}
-
-fn unwrapState(state: ?*luau.State) *luau.State {
-    return state orelse unreachable;
 }
 
 fn inputMapCallbackC(state: ?*luau.State) callconv(.c) c_int {

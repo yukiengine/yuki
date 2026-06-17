@@ -8,10 +8,10 @@
 const std = @import("std");
 const luau = @import("../backend/luau.zig");
 const context_mod = @import("context.zig");
-const input_api = @import("input_api.zig");
+const callbacks = @import("callbacks.zig");
 const world_mod = @import("world.zig");
 
-const CallbackRuntime = input_api.CallbackRuntime;
+const CallbackRuntime = callbacks.Runtime;
 const ScriptActor = world_mod.ScriptActor;
 const Vector2 = world_mod.Vector2;
 
@@ -55,6 +55,53 @@ const ActorHandleData = extern struct {
     }
 };
 
+fn setRuntimeCallbackField(
+    state: *luau.State,
+    table_index: i32,
+    runtime: *CallbackRuntime,
+    field_name: [:0]const u8,
+    callback: luau.CFunction,
+    debug_name: [:0]const u8,
+) void {
+    callbacks.setRuntimeCallbackField(
+        state,
+        table_index,
+        runtime,
+        field_name,
+        callback,
+        debug_name,
+    );
+}
+
+fn pushRuntimeCallback(
+    state: *luau.State,
+    runtime: *CallbackRuntime,
+    callback: luau.CFunction,
+    debug_name: [:0]const u8,
+) void {
+    callbacks.pushRuntimeCallback(state, runtime, callback, debug_name);
+}
+
+fn runtimeFromUpvalue(state: *luau.State) ?*CallbackRuntime {
+    return callbacks.runtimeFromUpvalue(state);
+}
+
+fn activeContextFromState(state: *luau.State) ?context_mod.ScriptContext {
+    return callbacks.activeContextFromState(state);
+}
+
+fn raise(state: *luau.State, message: [:0]const u8) c_int {
+    return callbacks.raise(state, message);
+}
+
+fn raiseContextError(state: *luau.State, err: context_mod.Error) c_int {
+    return callbacks.raiseContextError(state, .world, err);
+}
+
+fn unwrapState(state: ?*luau.State) *luau.State {
+    return callbacks.unwrapState(state);
+}
+
 /// Pushes the readonly `ctx.world` API table.
 pub fn pushWorldApi(state: *luau.State, runtime: *CallbackRuntime) void {
     luau.createTable(state, 0, 2);
@@ -65,43 +112,6 @@ pub fn pushWorldApi(state: *luau.State, runtime: *CallbackRuntime) void {
     setRuntimeCallbackField(state, world_index, runtime, "requireActor", worldRequireActorCallbackC, "ctx.world.requireActor");
 
     luau.setReadonly(state, world_index, true);
-}
-
-/// Stores a runtime-backed C closure into a table field.
-fn setRuntimeCallbackField(
-    state: *luau.State,
-    table_index: i32,
-    runtime: *CallbackRuntime,
-    field_name: [:0]const u8,
-    callback: luau.CFunction,
-    debug_name: [:0]const u8,
-) void {
-    luau.pushLightUserdata(state, @ptrCast(runtime));
-    luau.pushCClosure(state, callback, debug_name, 1);
-    luau.setField(state, table_index, field_name);
-}
-
-/// Pushes a runtime-backed C closure as a return value.
-fn pushRuntimeCallback(
-    state: *luau.State,
-    runtime: *CallbackRuntime,
-    callback: luau.CFunction,
-    debug_name: [:0]const u8,
-) void {
-    luau.pushLightUserdata(state, @ptrCast(runtime));
-    luau.pushCClosure(state, callback, debug_name, 1);
-}
-
-/// Reads the callback runtime from closure upvalue 1.
-fn runtimeFromUpvalue(state: *luau.State) ?*CallbackRuntime {
-    const raw = luau.toLightUserdataUpvalue(state, 1) orelse return null;
-    return @ptrCast(@alignCast(raw));
-}
-
-/// Reads the active script context for a lifecycle callback.
-fn activeContextFromState(state: *luau.State) ?context_mod.ScriptContext {
-    const runtime = runtimeFromUpvalue(state) orelse return null;
-    return runtime.activeContext();
 }
 
 /// Converts a Luau Vector2 payload into the world Vector2 type.
@@ -137,29 +147,6 @@ fn pushActorMetatable(state: *luau.State, runtime: *CallbackRuntime) void {
 fn actorFromReceiver(state: *luau.State, receiver_index: i32) ?ScriptActor {
     const handle = luau.toUserdata(state, ActorHandleData, receiver_index) orelse return null;
     return handle.scriptActor() catch null;
-}
-
-/// Raises a Luau runtime error.
-fn raise(state: *luau.State, message: [:0]const u8) c_int {
-    return luau.raiseError(state, message);
-}
-
-/// Converts world/context errors into script-facing messages.
-fn raiseContextError(state: *luau.State, err: context_mod.Error) c_int {
-    return switch (err) {
-        error.MissingWorld => raise(state, "world is unavailable during this script callback"),
-        error.MissingScriptActor => raise(state, "script actor was not found"),
-        error.StaleScriptActor => raise(state, "script actor is stale"),
-        error.ScriptActorKeyTooLong => raise(state, "script actor key is empty or too long"),
-        error.DuplicateScriptActorKey => raise(state, "script actor key is already registered"),
-        error.ScriptActorRegistryFull => raise(state, "script actor registry is full"),
-        else => raise(state, "world query failed"),
-    };
-}
-
-/// Unwraps the nullable C callback state.
-fn unwrapState(state: ?*luau.State) *luau.State {
-    return state orelse unreachable;
 }
 
 fn worldActorCallbackC(state: ?*luau.State) callconv(.c) c_int {
